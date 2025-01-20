@@ -1,0 +1,4 @@
+# Set target to ESP32
+CONFIG_IDF_TARGET="esp32"
+CONFIG_IDF_TARGET_ESP32=y
+
