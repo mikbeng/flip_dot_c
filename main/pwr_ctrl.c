@@ -12,6 +12,8 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 /******************************************************************************
  * Private Definitions and Types
@@ -141,6 +143,7 @@ esp_err_t enable_24V_supply(void)
     // Enable 24V supply
     //Set GPIO 8 to high
     gpio_set_level(PWR_CTRL_24V_PIN, 1);
+    ESP_LOGI(TAG, "24V supply enabled");
     return ESP_OK;
 }
 
@@ -149,6 +152,7 @@ esp_err_t disable_24V_supply(void)
     // Disable 24V supply
     //Set GPIO 8 to low
     gpio_set_level(PWR_CTRL_24V_PIN, 0);
+    ESP_LOGI(TAG, "24V supply disabled");
     return ESP_OK;
 }
 
@@ -157,6 +161,7 @@ esp_err_t enable_flip_board_logic_supply(void)
     // Enable flip board logic supply
     //Set GPIO 7 to high
     gpio_set_level(FLIP_BOARD_ON_PIN, 1);
+    ESP_LOGI(TAG, "Flip board logic supply enabled");
     return ESP_OK;
 }
 
@@ -165,6 +170,7 @@ esp_err_t disable_flip_board_logic_supply(void)
     // Disable flip board logic supply
     //Set GPIO 7 to low
     gpio_set_level(FLIP_BOARD_ON_PIN, 0);
+    ESP_LOGI(TAG, "Flip board logic supply disabled");
     return ESP_OK;
 }
 
@@ -174,6 +180,8 @@ esp_err_t enable_flip_board(void)
     enable_24V_supply();
     //Enable flip board logic supply
     enable_flip_board_logic_supply();
+
+    vTaskDelay(250 / portTICK_PERIOD_MS);
     return ESP_OK;
 }
 
