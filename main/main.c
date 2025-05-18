@@ -4,6 +4,7 @@
 #include "pwr_ctrl.h"
 #include "esp_log.h"
 #include "flip_dot.h"
+#include "driver/gpio.h"
 
 const static char *TAG = "MAIN";
 
@@ -11,6 +12,7 @@ static flip_dot_t flip_dot;
 
 void app_main(void)
 {
+
     init_power_control();
     int voltage_mv;
 
@@ -28,7 +30,11 @@ void app_main(void)
     while (1) {
         //printf("[%d] Hello world!\n", i);
         flip_dot_set_pixel(&flip_dot, 0, 0, true);
-        i++;
+
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+        flip_dot_set_pixel(&flip_dot, 0, 0, false);
+
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }

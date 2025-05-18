@@ -18,19 +18,19 @@
  ******************************************************************************/
 
 // Pin definitions - replace with your actual pin numbers
-#define PIN_ROW_A0 10
-#define PIN_ROW_A1 11
-#define PIN_ROW_A2 12
-#define PIN_COL_A0 6
-#define PIN_COL_A1 7
-#define PIN_COL_A2 8
-#define PIN_COL_A3 9
-#define PIN_ENABLE_1A0 0
-#define PIN_ENABLE_1A1 1
-#define PIN_ENABLE_2A0 2
-#define PIN_ENABLE_2A1 3
-#define PIN_ENABLE_1E 4
-#define PIN_ENABLE_2E 5
+#define PIN_ROW_A0 13
+#define PIN_ROW_A1 12
+#define PIN_ROW_A2 27
+#define PIN_COL_A0 26
+#define PIN_COL_A1 25
+#define PIN_COL_A2 20
+#define PIN_COL_A3 19
+#define PIN_ENABLE_1A0 33
+#define PIN_ENABLE_1A1 15
+#define PIN_ENABLE_2A0 32
+#define PIN_ENABLE_2A1 14
+#define PIN_ENABLE_1E 21
+#define PIN_ENABLE_2E 4
 
 const char *TAG = "flip_dot";
 
