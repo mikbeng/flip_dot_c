@@ -77,4 +77,7 @@ void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool valu
 void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH]);
 void flip_dot_set_rows_cols(flip_dot_t *display, uint8_t row_start, uint8_t row_end, uint8_t col_start, uint8_t col_end, bool pixel_value);
 
+// Debug functions
+void flip_dot_debug_pixel_calc(uint8_t row, uint8_t col, bool value);
+
 #endif /* FLIP_DOT_H */

@@ -76,7 +76,9 @@ void demux_74HC139_disable_output(demux_74HC139_t *demux, uint8_t channel);
 // Delay function (microseconds)
 static void delay_us(uint32_t us) {
     // Replace with your platform's microsecond delay
-    vTaskDelay(us / 1000 / portTICK_PERIOD_MS);
+    uint32_t delay_ms = us / 1000; // Convert to milliseconds
+    //ESP_LOGI(TAG, "Delaying for %ld milliseconds", delay_ms);
+    vTaskDelay(delay_ms / portTICK_PERIOD_MS);
 }
 
 // Delay function (milliseconds)
@@ -143,13 +145,18 @@ void demux_74HC4514_set_output(demux_74HC4514_t *demux, uint8_t output_pos) {
     // Convert output position to binary
     decimal_to_bin(output_pos, 4, binary);
     
+    ESP_LOGI(TAG, "74HC4514 output_pos=%d -> binary=[%d,%d,%d,%d]", output_pos, binary[0], binary[1], binary[2], binary[3]);
+    
     // Set output pins
     gpio_write(demux->pin_A0.pin, binary[3], demux->pin_A0.is_inverted);
     gpio_write(demux->pin_A1.pin, binary[2], demux->pin_A1.is_inverted);
     gpio_write(demux->pin_A2.pin, binary[1], demux->pin_A2.is_inverted);
     
+    ESP_LOGI(TAG, "Setting pins: A0=%d, A1=%d, A2=%d", binary[3], binary[2], binary[1]);
+    
     if (demux->pin_A3.pin != 0) {
         gpio_write(demux->pin_A3.pin, !binary[0], demux->pin_A3.is_inverted); // A3 is inverted in the original code
+        ESP_LOGI(TAG, "Setting pin A3=%d (inverted from %d)", !binary[0], binary[0]);
     }
 }
 
@@ -187,11 +194,16 @@ void demux_74HC139_set_row_output(demux_74HC139_t *demux,
     // Convert row group to binary
     decimal_to_bin(row_grp, 2, binary);
     
+    ESP_LOGI(TAG, "74HC139 ROW: row_grp=%d -> binary=[%d,%d]", row_grp, binary[0], binary[1]);
+    
     // Set row group pins
     gpio_write(demux->pin_1A0.pin, binary[1], demux->pin_1A0.is_inverted);
     gpio_write(demux->pin_1A1.pin, binary[0], demux->pin_1A1.is_inverted);
     
+    ESP_LOGI(TAG, "Setting row group pins: 1A0=%d, 1A1=%d", binary[1], binary[0]);
+    
     // Set row output position
+    ESP_LOGI(TAG, "Setting ROW demux for output_pos=%d", output_pos);
     demux_74HC4514_set_output(row_demux, output_pos);
 }
 
@@ -204,11 +216,16 @@ void demux_74HC139_set_col_output(demux_74HC139_t *demux,
     // Convert column group to binary
     decimal_to_bin(col_grp, 2, binary);
     
+    ESP_LOGI(TAG, "74HC139 COL: col_grp=%d -> binary=[%d,%d]", col_grp, binary[0], binary[1]);
+    
     // Set column group pins
     gpio_write(demux->pin_2A0.pin, binary[1], demux->pin_2A0.is_inverted);
     gpio_write(demux->pin_2A1.pin, binary[0], demux->pin_2A1.is_inverted);
     
+    ESP_LOGI(TAG, "Setting col group pins: 2A0=%d, 2A1=%d", binary[1], binary[0]);
+    
     // Set column output position
+    ESP_LOGI(TAG, "Setting COL demux for output_pos=%d", output_pos);
     demux_74HC4514_set_output(col_demux, output_pos);
 }
 
@@ -251,7 +268,7 @@ void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t swee
     gpio_pin_t enable_2A0 = {PIN_ENABLE_2A0, false};
     gpio_pin_t enable_2A1 = {PIN_ENABLE_2A1, false};
     gpio_pin_t enable_1E = {PIN_ENABLE_1E, false};
-    gpio_pin_t enable_2E = {PIN_ENABLE_2E, true};
+    gpio_pin_t enable_2E = {PIN_ENABLE_2E, false};  // This should be inverted according to Python code
     
     // Initialize demuxes
     demux_74HC4514_init(&display->row_demux, row_A0, row_A1, row_A2, row_A3);
@@ -270,14 +287,6 @@ void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t swee
     gpio_write(enable_2E.pin, false, enable_2E.is_inverted);
     delay_ms(200);
     
-    ESP_LOGI(TAG, "Clearing all pixels");
-    // Clear all pixels
-    for (uint8_t r = 0; r < DISPLAY_HEIGHT; r++) {
-        for (uint8_t c = 0; c < DISPLAY_WIDTH; c++) {
-            flip_dot_set_pixel(display, r, c, 0);
-        }
-    }
-    
     delay_ms(200);
 }
 
@@ -288,17 +297,21 @@ void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool valu
     uint8_t col_grp = col / 7;
     uint8_t col_grp_pixel = col % 7;
     
+    ESP_LOGI(TAG, "Setting pixel (%d,%d) = %d", row, col, value);
+    ESP_LOGI(TAG, "Row: grp=%d, pixel=%d | Col: grp=%d, pixel=%d", row_grp, row_grp_pixel, col_grp, col_grp_pixel);
+    
     // Set row output
     uint8_t row_output_pos = row_grp_pixel + 1 + (value * 8);
-    ESP_LOGI(TAG, "Setting row output to %d", row_output_pos);
+    ESP_LOGI(TAG, "Row output position: %d", row_output_pos);
     demux_74HC139_set_row_output(&display->enable_demux, row_grp, row_output_pos, &display->row_demux);
     
     // Set column output
     uint8_t col_output_pos = col_grp_pixel + 1 + (value * 8);
-    ESP_LOGI(TAG, "Setting column output to %d", col_output_pos);
+    ESP_LOGI(TAG, "Column output position: %d", col_output_pos);
     demux_74HC139_set_col_output(&display->enable_demux, col_grp, col_output_pos, &display->col_demux);
     
     // Send column enable pulse
+    ESP_LOGI(TAG, "Sending enable pulse (pin=%d, inverted=%d)", display->enable_demux.pin_2E.pin, display->enable_demux.pin_2E.is_inverted);
     gpio_write(display->enable_demux.pin_2E.pin, true, display->enable_demux.pin_2E.is_inverted);
     delay_us(display->flip_time_us);
     gpio_write(display->enable_demux.pin_2E.pin, false, display->enable_demux.pin_2E.is_inverted);
@@ -381,4 +394,31 @@ void flip_dot_set_rows_cols(flip_dot_t *display, uint8_t row_start, uint8_t row_
             flip_dot_set_pixel(display, r, c, pixel_value);
         }
     }
+}
+
+void flip_dot_debug_pixel_calc(uint8_t row, uint8_t col, bool value) {
+    uint8_t row_grp = row / 7;
+    uint8_t row_grp_pixel = row % 7;
+    uint8_t col_grp = col / 7;
+    uint8_t col_grp_pixel = col % 7;
+    
+    uint8_t row_output_pos = row_grp_pixel + 1 + (value * 8);
+    uint8_t col_output_pos = col_grp_pixel + 1 + (value * 8);
+    
+    ESP_LOGI(TAG, "DEBUG CALC for pixel (%d,%d) = %d:", row, col, value);
+    ESP_LOGI(TAG, "  Row: grp=%d, pixel_in_grp=%d, output_pos=%d", row_grp, row_grp_pixel, row_output_pos);
+    ESP_LOGI(TAG, "  Col: grp=%d, pixel_in_grp=%d, output_pos=%d", col_grp, col_grp_pixel, col_output_pos);
+    
+    // Show binary representation
+    uint8_t row_binary[4], col_binary[4];
+    decimal_to_bin(row_output_pos, 4, row_binary);
+    decimal_to_bin(col_output_pos, 4, col_binary);
+    
+    ESP_LOGI(TAG, "  Row binary: [%d,%d,%d,%d] -> A0=%d, A1=%d, A2=%d", 
+             row_binary[0], row_binary[1], row_binary[2], row_binary[3],
+             row_binary[3], row_binary[2], row_binary[1]);
+             
+    ESP_LOGI(TAG, "  Col binary: [%d,%d,%d,%d] -> A0=%d, A1=%d, A2=%d, A3=%d", 
+             col_binary[0], col_binary[1], col_binary[2], col_binary[3],
+             col_binary[3], col_binary[2], col_binary[1], !col_binary[0]);
 }
