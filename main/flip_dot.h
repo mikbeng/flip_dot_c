@@ -76,7 +76,7 @@ void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t swee
 void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool value);
 void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH]);
 void flip_dot_set_rows_cols(flip_dot_t *display, uint8_t row_start, uint8_t row_end, uint8_t col_start, uint8_t col_end, bool pixel_value);
-
+void flip_dot_clear_display(flip_dot_t *display);
 // Debug functions
 void flip_dot_debug_pixel_calc(uint8_t row, uint8_t col, bool value);
 

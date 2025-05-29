@@ -23,8 +23,8 @@
 #define PIN_ROW_A2 27
 #define PIN_COL_A0 26
 #define PIN_COL_A1 25
-#define PIN_COL_A2 20
-#define PIN_COL_A3 19
+#define PIN_COL_A2 5
+#define PIN_COL_A3 19   //2A/2B header pin 18 Inverted!
 #define PIN_ENABLE_1A0 33
 #define PIN_ENABLE_1A1 15
 #define PIN_ENABLE_2A0 32
@@ -131,7 +131,7 @@ void demux_74HC4514_init(demux_74HC4514_t *demux,
         .intr_type = GPIO_INTR_DISABLE
     };
     
-    if (pin_A3.pin != 0) { // 0 indicates unused pin
+    if (pin_A3.pin != 0xFF) { // 0xFF indicates unused pin
         io_config.pin_bit_mask |= (1ULL << pin_A3.pin);
     }
 
@@ -145,18 +145,18 @@ void demux_74HC4514_set_output(demux_74HC4514_t *demux, uint8_t output_pos) {
     // Convert output position to binary
     decimal_to_bin(output_pos, 4, binary);
     
-    ESP_LOGI(TAG, "74HC4514 output_pos=%d -> binary=[%d,%d,%d,%d]", output_pos, binary[0], binary[1], binary[2], binary[3]);
+    ESP_LOGD(TAG, "74HC4514 output_pos=%d -> binary=[%d,%d,%d,%d]", output_pos, binary[0], binary[1], binary[2], binary[3]);
     
     // Set output pins
     gpio_write(demux->pin_A0.pin, binary[3], demux->pin_A0.is_inverted);
     gpio_write(demux->pin_A1.pin, binary[2], demux->pin_A1.is_inverted);
     gpio_write(demux->pin_A2.pin, binary[1], demux->pin_A2.is_inverted);
     
-    ESP_LOGI(TAG, "Setting pins: A0=%d, A1=%d, A2=%d", binary[3], binary[2], binary[1]);
+    ESP_LOGD(TAG, "Setting pins: A0=%d, A1=%d, A2=%d", binary[3], binary[2], binary[1]);
     
-    if (demux->pin_A3.pin != 0) {
+    if (demux->pin_A3.pin != 0xFF) {
         gpio_write(demux->pin_A3.pin, !binary[0], demux->pin_A3.is_inverted); // A3 is inverted in the original code
-        ESP_LOGI(TAG, "Setting pin A3=%d (inverted from %d)", !binary[0], binary[0]);
+        ESP_LOGD(TAG, "Setting pin A3=%d (inverted from %d)", !binary[0], binary[0]);
     }
 }
 
@@ -194,16 +194,16 @@ void demux_74HC139_set_row_output(demux_74HC139_t *demux,
     // Convert row group to binary
     decimal_to_bin(row_grp, 2, binary);
     
-    ESP_LOGI(TAG, "74HC139 ROW: row_grp=%d -> binary=[%d,%d]", row_grp, binary[0], binary[1]);
+    ESP_LOGD(TAG, "74HC139 ROW: row_grp=%d -> binary=[%d,%d]", row_grp, binary[0], binary[1]);
     
     // Set row group pins
     gpio_write(demux->pin_1A0.pin, binary[1], demux->pin_1A0.is_inverted);
     gpio_write(demux->pin_1A1.pin, binary[0], demux->pin_1A1.is_inverted);
     
-    ESP_LOGI(TAG, "Setting row group pins: 1A0=%d, 1A1=%d", binary[1], binary[0]);
+    ESP_LOGD(TAG, "Setting row group pins: 1A0=%d, 1A1=%d", binary[1], binary[0]);
     
     // Set row output position
-    ESP_LOGI(TAG, "Setting ROW demux for output_pos=%d", output_pos);
+    ESP_LOGD(TAG, "Setting ROW demux for output_pos=%d", output_pos);
     demux_74HC4514_set_output(row_demux, output_pos);
 }
 
@@ -216,16 +216,16 @@ void demux_74HC139_set_col_output(demux_74HC139_t *demux,
     // Convert column group to binary
     decimal_to_bin(col_grp, 2, binary);
     
-    ESP_LOGI(TAG, "74HC139 COL: col_grp=%d -> binary=[%d,%d]", col_grp, binary[0], binary[1]);
+    ESP_LOGD(TAG, "74HC139 COL: col_grp=%d -> binary=[%d,%d]", col_grp, binary[0], binary[1]);
     
     // Set column group pins
     gpio_write(demux->pin_2A0.pin, binary[1], demux->pin_2A0.is_inverted);
     gpio_write(demux->pin_2A1.pin, binary[0], demux->pin_2A1.is_inverted);
     
-    ESP_LOGI(TAG, "Setting col group pins: 2A0=%d, 2A1=%d", binary[1], binary[0]);
+    ESP_LOGD(TAG, "Setting col group pins: 2A0=%d, 2A1=%d", binary[1], binary[0]);
     
     // Set column output position
-    ESP_LOGI(TAG, "Setting COL demux for output_pos=%d", output_pos);
+    ESP_LOGD(TAG, "Setting COL demux for output_pos=%d", output_pos);
     demux_74HC4514_set_output(col_demux, output_pos);
 }
 
@@ -256,7 +256,7 @@ void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t swee
     gpio_pin_t row_A0 = {PIN_ROW_A0, false};
     gpio_pin_t row_A1 = {PIN_ROW_A1, false};
     gpio_pin_t row_A2 = {PIN_ROW_A2, false};
-    gpio_pin_t row_A3 = {0, false};  // Not used for rows
+    gpio_pin_t row_A3 = {0xFF, false};  // Not used for rows
     
     gpio_pin_t col_A0 = {PIN_COL_A0, false};
     gpio_pin_t col_A1 = {PIN_COL_A1, false};
@@ -268,13 +268,31 @@ void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t swee
     gpio_pin_t enable_2A0 = {PIN_ENABLE_2A0, false};
     gpio_pin_t enable_2A1 = {PIN_ENABLE_2A1, false};
     gpio_pin_t enable_1E = {PIN_ENABLE_1E, false};
-    gpio_pin_t enable_2E = {PIN_ENABLE_2E, false};  // This should be inverted according to Python code
+    gpio_pin_t enable_2E = {PIN_ENABLE_2E, false};  
     
     // Initialize demuxes
     demux_74HC4514_init(&display->row_demux, row_A0, row_A1, row_A2, row_A3);
     demux_74HC4514_init(&display->col_demux, col_A0, col_A1, col_A2, col_A3);
     demux_74HC139_init(&display->enable_demux, enable_1A0, enable_1A1, enable_2A0, enable_2A1, enable_1E, enable_2E);
     
+    // gpio_pin_t pins_to_flip[] = {enable_1E, enable_1A0, enable_1A1, enable_2A0, enable_2A1, col_A0, col_A1, col_A2, col_A3, row_A0, row_A1, row_A2, row_A3};
+
+    // //Create an array with the pin names
+    // const char *pin_names[] = {"enable_1E", "enable_1A0", "enable_1A1", "enable_2A0", "enable_2A1", "col_A0", "col_A1", "col_A2", "col_A3", "row_A0", "row_A1", "row_A2", "row_A3"};
+
+    // while(1) {
+    //     //Flip all gpios 20 times each in a while loop
+    //     for (int j = 0; j < sizeof(pins_to_flip) / sizeof(pins_to_flip[0]); j++) {
+    //         ESP_LOGI(TAG, "Flipping pin %s", pin_names[j]);
+    //         for (int i = 0; i < 20; i++) {
+    //             gpio_write(pins_to_flip[j].pin, true, pins_to_flip[j].is_inverted);
+    //             delay_ms(1000);
+    //             gpio_write(pins_to_flip[j].pin, false, pins_to_flip[j].is_inverted);
+    //             delay_ms(1000);
+    //             }
+    //         }
+    // }
+
     // Set parameters
     display->flip_time_us = flip_time_us;
     display->sweep_mode = sweep_mode;
@@ -297,27 +315,37 @@ void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool valu
     uint8_t col_grp = col / 7;
     uint8_t col_grp_pixel = col % 7;
     
-    ESP_LOGI(TAG, "Setting pixel (%d,%d) = %d", row, col, value);
-    ESP_LOGI(TAG, "Row: grp=%d, pixel=%d | Col: grp=%d, pixel=%d", row_grp, row_grp_pixel, col_grp, col_grp_pixel);
+    ESP_LOGD(TAG, "Setting pixel (%d,%d) = %d", row, col, value);
+    ESP_LOGD(TAG, "Row: grp=%d, pixel=%d | Col: grp=%d, pixel=%d", row_grp, row_grp_pixel, col_grp, col_grp_pixel);
     
     // Set row output
-    uint8_t row_output_pos = row_grp_pixel + 1 + (value * 8);
-    ESP_LOGI(TAG, "Row output position: %d", row_output_pos);
+    uint8_t row_output_pos = row_grp_pixel + 1 + ((!value) * 8);
+    ESP_LOGD(TAG, "Row output position: %d", row_output_pos);
     demux_74HC139_set_row_output(&display->enable_demux, row_grp, row_output_pos, &display->row_demux);
     
     // Set column output
-    uint8_t col_output_pos = col_grp_pixel + 1 + (value * 8);
-    ESP_LOGI(TAG, "Column output position: %d", col_output_pos);
+    uint8_t col_output_pos = col_grp_pixel + 1 + ((!value) * 8);
+    ESP_LOGD(TAG, "Column output position: %d", col_output_pos);
     demux_74HC139_set_col_output(&display->enable_demux, col_grp, col_output_pos, &display->col_demux);
     
     // Send column enable pulse
-    ESP_LOGI(TAG, "Sending enable pulse (pin=%d, inverted=%d)", display->enable_demux.pin_2E.pin, display->enable_demux.pin_2E.is_inverted);
+    ESP_LOGD(TAG, "Sending enable pulse (pin=%d, inverted=%d)", display->enable_demux.pin_2E.pin, display->enable_demux.pin_2E.is_inverted);
     gpio_write(display->enable_demux.pin_2E.pin, true, display->enable_demux.pin_2E.is_inverted);
     delay_us(display->flip_time_us);
     gpio_write(display->enable_demux.pin_2E.pin, false, display->enable_demux.pin_2E.is_inverted);
+    delay_us(1000); //Some recover delay for the capacitor to discharge completely. This can maybe be lower than 1ms, but since freertos is configured to 1000hz, smaller delays are not possible.
     
     // Update pixel state in memory
     display->pixel_state[row][col] = value;
+}
+
+void flip_dot_clear_display(flip_dot_t *display) {
+    for (uint8_t r = 0; r < DISPLAY_HEIGHT; r++) {
+        for (uint8_t c = 0; c < DISPLAY_WIDTH; c++) {
+            //ESP_LOGI(TAG, "Clearing pixel (%d,%d)", r, c);
+            flip_dot_set_pixel(display, r, c, false);
+        }
+    }
 }
 
 void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH]) {
