@@ -31,13 +31,31 @@ void app_main(void)
     //Clear display
     flip_dot_clear_display(&flip_dot);
 
-    bool pixel_value = true;
+    // Demo loop - cycle through different animations
     while (1) {
-        //Flip the first 5 pixels in the first row
-        for (int i = 0; i < 5; i++) {
-            flip_dot_set_pixel(&flip_dot, 0, i, pixel_value);
-        }
-        pixel_value = !pixel_value;
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        // ESP_LOGI(TAG, "Running sine wave demo...");
+        // flip_dot_demo_sine_wave(&flip_dot, 150);
+        
+        // vTaskDelay(10000 / portTICK_PERIOD_MS);
+        
+        ESP_LOGI(TAG, "Running bouncing ball demo...");
+        flip_dot_demo_bouncing_ball(&flip_dot, 50);
+        
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
+        
+        ESP_LOGI(TAG, "Running matrix rain demo...");
+        flip_dot_demo_matrix_rain(&flip_dot, 150);
+        
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
+        
+        ESP_LOGI(TAG, "Running ripple effect demo...");
+        flip_dot_demo_ripple_effect(&flip_dot, 200);
+        
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
+        
+        ESP_LOGI(TAG, "Running Game of Life demo...");
+        flip_dot_demo_game_of_life(&flip_dot, 500, 50);
+        
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
     }
 }

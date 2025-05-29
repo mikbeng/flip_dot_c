@@ -12,6 +12,8 @@
 #include "freertos/FreeRTOS.h" 
 #include "freertos/task.h"
 #include "esp_log.h"
+#include <math.h>
+#include <stdlib.h>
 
 /******************************************************************************
  * Private Definitions and Types
@@ -449,4 +451,281 @@ void flip_dot_debug_pixel_calc(uint8_t row, uint8_t col, bool value) {
     ESP_LOGI(TAG, "  Col binary: [%d,%d,%d,%d] -> A0=%d, A1=%d, A2=%d, A3=%d", 
              col_binary[0], col_binary[1], col_binary[2], col_binary[3],
              col_binary[3], col_binary[2], col_binary[1], !col_binary[0]);
+}
+
+/******************************************************************************
+ * Demo Functions
+ ******************************************************************************/
+
+void flip_dot_demo_sine_wave(flip_dot_t *display, uint32_t delay_ms) {
+    ESP_LOGI(TAG, "Starting sine wave demo");
+    
+    uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+    
+    for (uint32_t frame = 0; frame < 200; frame++) {
+        // Clear the buffer
+        memset(display_buffer, 0, sizeof(display_buffer));
+        
+        for (uint8_t col = 0; col < DISPLAY_WIDTH; col++) {
+            // Create a sine wave that moves across the display
+            float angle = (float)(col + frame) * 0.3f;
+            float sine_val = sinf(angle);
+            
+            // Map sine wave (-1 to 1) to display height
+            int row = (int)(((sine_val + 1.0f) / 2.0f) * (DISPLAY_HEIGHT - 1));
+            
+            if (row >= 0 && row < DISPLAY_HEIGHT) {
+                display_buffer[row][col] = 1;
+                
+                // Add a second wave offset by 90 degrees
+                float angle2 = angle + (M_PI / 2.0f);
+                float sine_val2 = sinf(angle2);
+                int row2 = (int)(((sine_val2 + 1.0f) / 2.0f) * (DISPLAY_HEIGHT - 1));
+                
+                if (row2 >= 0 && row2 < DISPLAY_HEIGHT && row2 != row) {
+                    display_buffer[row2][col] = 1;
+                }
+            }
+        }
+        
+        // Update only changed pixels
+        flip_dot_update_display(display, display_buffer);
+        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+    }
+}
+
+void flip_dot_demo_bouncing_ball(flip_dot_t *display, uint32_t delay_ms) {
+    ESP_LOGI(TAG, "Starting bouncing ball demo");
+    
+    uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+    float ball_x = 5.0f;
+    float ball_y = 5.0f;
+    float vel_x = 0.8f;
+    float vel_y = 0.6f;
+    
+    for (uint32_t frame = 0; frame < 300; frame++) {
+        // Clear the buffer
+        memset(display_buffer, 0, sizeof(display_buffer));
+        
+        // Update ball position
+        ball_x += vel_x;
+        ball_y += vel_y;
+        
+        // Bounce off walls
+        if (ball_x <= 1 || ball_x >= DISPLAY_WIDTH - 2) {
+            vel_x = -vel_x;
+            ball_x = (ball_x <= 1) ? 1 : DISPLAY_WIDTH - 2;
+        }
+        if (ball_y <= 1 || ball_y >= DISPLAY_HEIGHT - 2) {
+            vel_y = -vel_y;
+            ball_y = (ball_y <= 1) ? 1 : DISPLAY_HEIGHT - 2;
+        }
+        
+        // Draw ball (3x3 square) in buffer
+        int center_x = (int)ball_x;
+        int center_y = (int)ball_y;
+        
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                int x = center_x + dx;
+                int y = center_y + dy;
+                if (x >= 0 && x < DISPLAY_WIDTH && y >= 0 && y < DISPLAY_HEIGHT) {
+                    display_buffer[y][x] = 1;
+                }
+            }
+        }
+        
+        // Update only changed pixels
+        flip_dot_update_display(display, display_buffer);
+        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+    }
+}
+
+void flip_dot_demo_matrix_rain(flip_dot_t *display, uint32_t delay_ms) {
+    ESP_LOGI(TAG, "Starting matrix rain demo");
+    
+    uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+    // Array to track rain drops for each column
+    int8_t drop_pos[DISPLAY_WIDTH];
+    uint8_t drop_length[DISPLAY_WIDTH];
+    
+    // Initialize rain drops
+    for (uint8_t col = 0; col < DISPLAY_WIDTH; col++) {
+        drop_pos[col] = -(rand() % 10);  // Start at different times
+        drop_length[col] = 3 + (rand() % 5);  // Random length 3-7
+    }
+    
+    for (uint32_t frame = 0; frame < 500; frame++) {
+        // Clear the buffer
+        memset(display_buffer, 0, sizeof(display_buffer));
+        
+        for (uint8_t col = 0; col < DISPLAY_WIDTH; col++) {
+            // Draw the rain drop trail
+            for (uint8_t i = 0; i < drop_length[col]; i++) {
+                int row = drop_pos[col] - i;
+                if (row >= 0 && row < DISPLAY_HEIGHT) {
+                    // Fade effect: head of drop is bright, tail gets dimmer
+                    bool pixel_on = (i < drop_length[col] / 2) || (rand() % 3 == 0);
+                    if (pixel_on) {
+                        display_buffer[row][col] = 1;
+                    }
+                }
+            }
+            
+            // Move drop down
+            drop_pos[col]++;
+            
+            // Reset drop when it goes off screen
+            if (drop_pos[col] > DISPLAY_HEIGHT + drop_length[col]) {
+                drop_pos[col] = -(rand() % 10);
+                drop_length[col] = 3 + (rand() % 5);
+            }
+        }
+        
+        // Update only changed pixels
+        flip_dot_update_display(display, display_buffer);
+        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+    }
+}
+
+void flip_dot_demo_ripple_effect(flip_dot_t *display, uint32_t delay_ms) {
+    ESP_LOGI(TAG, "Starting ripple effect demo");
+    
+    uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+    float center_x = DISPLAY_WIDTH / 2.0f;
+    float center_y = DISPLAY_HEIGHT / 2.0f;
+    
+    for (uint32_t frame = 0; frame < 100; frame++) {
+        // Clear the buffer
+        memset(display_buffer, 0, sizeof(display_buffer));
+        
+        float radius1 = frame * 0.5f;
+        float radius2 = (frame > 20) ? (frame - 20) * 0.5f : 0;
+        float radius3 = (frame > 40) ? (frame - 40) * 0.5f : 0;
+        
+        for (uint8_t row = 0; row < DISPLAY_HEIGHT; row++) {
+            for (uint8_t col = 0; col < DISPLAY_WIDTH; col++) {
+                float dist = sqrtf((col - center_x) * (col - center_x) + 
+                                 (row - center_y) * (row - center_y));
+                
+                // Check if pixel is on any of the ripple rings
+                bool on_ripple = false;
+                if (fabs(dist - radius1) < 0.8f && radius1 > 0) on_ripple = true;
+                if (fabs(dist - radius2) < 0.8f && radius2 > 0) on_ripple = true;
+                if (fabs(dist - radius3) < 0.8f && radius3 > 0) on_ripple = true;
+                
+                if (on_ripple) {
+                    display_buffer[row][col] = 1;
+                }
+            }
+        }
+        
+        // Update only changed pixels
+        flip_dot_update_display(display, display_buffer);
+        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+    }
+}
+
+void flip_dot_demo_scrolling_text(flip_dot_t *display, const char* text, uint32_t delay_ms) {
+    ESP_LOGI(TAG, "Starting scrolling text demo: %s", text);
+    
+    uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+    
+    // Simple 5x7 font for basic characters
+    const uint8_t font_A[7] = {0x1F, 0x24, 0x24, 0x24, 0x1F, 0x00, 0x00};
+    const uint8_t font_space[7] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    
+    int text_len = strlen(text);
+    int total_width = text_len * 6;  // 5 pixels + 1 space per character
+    
+    for (int offset = DISPLAY_WIDTH; offset > -total_width; offset--) {
+        // Clear the buffer
+        memset(display_buffer, 0, sizeof(display_buffer));
+        
+        for (int char_idx = 0; char_idx < text_len; char_idx++) {
+            int char_x = offset + char_idx * 6;
+            
+            const uint8_t* font_data;
+            if (text[char_idx] == 'A' || text[char_idx] == 'a') {
+                font_data = font_A;
+            } else {
+                font_data = font_space;  // Default to space for unsupported chars
+            }
+            
+            // Draw character in buffer
+            for (int col = 0; col < 5; col++) {
+                if (char_x + col >= 0 && char_x + col < DISPLAY_WIDTH) {
+                    for (int row = 0; row < 7; row++) {
+                        if (row + 3 < DISPLAY_HEIGHT) {  // Center vertically
+                            bool pixel = (font_data[col] >> row) & 1;
+                            if (pixel) {
+                                display_buffer[row + 3][char_x + col] = 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Update only changed pixels
+        flip_dot_update_display(display, display_buffer);
+        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+    }
+}
+
+void flip_dot_demo_game_of_life(flip_dot_t *display, uint32_t delay_ms, uint32_t generations) {
+    ESP_LOGI(TAG, "Starting Conway's Game of Life demo");
+    
+    uint8_t current_gen[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+    uint8_t next_gen[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+    
+    // Initialize with random pattern
+    for (uint8_t row = 0; row < DISPLAY_HEIGHT; row++) {
+        for (uint8_t col = 0; col < DISPLAY_WIDTH; col++) {
+            current_gen[row][col] = (rand() % 3 == 0) ? 1 : 0;  // ~33% chance of being alive
+        }
+    }
+    
+    for (uint32_t gen = 0; gen < generations; gen++) {
+        // Calculate next generation
+        for (uint8_t row = 0; row < DISPLAY_HEIGHT; row++) {
+            for (uint8_t col = 0; col < DISPLAY_WIDTH; col++) {
+                // Count living neighbors
+                uint8_t neighbors = 0;
+                for (int dr = -1; dr <= 1; dr++) {
+                    for (int dc = -1; dc <= 1; dc++) {
+                        if (dr == 0 && dc == 0) continue;  // Skip center cell
+                        
+                        int nr = row + dr;
+                        int nc = col + dc;
+                        
+                        // Wrap around edges (toroidal topology)
+                        if (nr < 0) nr = DISPLAY_HEIGHT - 1;
+                        if (nr >= DISPLAY_HEIGHT) nr = 0;
+                        if (nc < 0) nc = DISPLAY_WIDTH - 1;
+                        if (nc >= DISPLAY_WIDTH) nc = 0;
+                        
+                        if (current_gen[nr][nc]) neighbors++;
+                    }
+                }
+                
+                // Apply Conway's rules
+                if (current_gen[row][col]) {
+                    // Cell is alive
+                    next_gen[row][col] = (neighbors == 2 || neighbors == 3) ? 1 : 0;
+                } else {
+                    // Cell is dead
+                    next_gen[row][col] = (neighbors == 3) ? 1 : 0;
+                }
+            }
+        }
+        
+        // Update display with new generation (only changed pixels)
+        flip_dot_update_display(display, next_gen);
+        
+        // Copy next generation to current
+        memcpy(current_gen, next_gen, sizeof(current_gen));
+        
+        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+    }
 }
