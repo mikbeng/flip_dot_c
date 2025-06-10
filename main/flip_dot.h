@@ -89,4 +89,8 @@ void flip_dot_demo_game_of_life(flip_dot_t *display, uint32_t delay_ms, uint32_t
 // Debug functions
 void flip_dot_debug_pixel_calc(uint8_t row, uint8_t col, bool value);
 
+// Demux functions
+void demux_74HC139_enable_output(demux_74HC139_t *demux, uint8_t channel);
+void demux_74HC139_disable_output(demux_74HC139_t *demux, uint8_t channel);
+
 #endif /* FLIP_DOT_H */

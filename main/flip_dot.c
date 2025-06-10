@@ -231,6 +231,11 @@ void demux_74HC139_set_col_output(demux_74HC139_t *demux,
     demux_74HC4514_set_output(col_demux, output_pos);
 }
 
+
+
+/******************************************************************************
+ * Flip Dot Functions
+ ******************************************************************************/
 void demux_74HC139_enable_output(demux_74HC139_t *demux, uint8_t channel) {
     if (channel == 1) {
         gpio_write(demux->pin_1E.pin, true, demux->pin_1E.is_inverted);
@@ -247,9 +252,6 @@ void demux_74HC139_disable_output(demux_74HC139_t *demux, uint8_t channel) {
     }
 }
 
-/******************************************************************************
- * Flip Dot Functions
- ******************************************************************************/
 
 void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t sweep_mode) {
     
@@ -342,6 +344,7 @@ void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool valu
 }
 
 void flip_dot_clear_display(flip_dot_t *display) {
+    ESP_LOGI(TAG, "Clearing display");
     for (uint8_t r = 0; r < DISPLAY_HEIGHT; r++) {
         for (uint8_t c = 0; c < DISPLAY_WIDTH; c++) {
             //ESP_LOGI(TAG, "Clearing pixel (%d,%d)", r, c);
