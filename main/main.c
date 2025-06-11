@@ -4,6 +4,7 @@
 #include "pwr_ctrl.h"
 #include "esp_log.h"
 #include "flip_dot.h"
+#include "snake.h"
 #include "driver/gpio.h"
 
 const static char *TAG = "MAIN";
@@ -29,17 +30,23 @@ void app_main(void)
     //Clear display
     flip_dot_clear_display(&flip_dot);
 
-    ESP_LOGI(TAG, "Running bouncing ball demo...");
-    flip_dot_demo_bouncing_ball(&flip_dot, 30);
+    ESP_LOGI(TAG, "Running Snake game demo...");
+    snake_game_demo(&flip_dot, 30000);  // Run Snake demo for 30 seconds
 
     // Demo loop - cycle through different animations
     while (1) {
+        // ESP_LOGI(TAG, "Running bouncing ball demo...");
+        // flip_dot_demo_bouncing_ball(&flip_dot, 30);
+        
+        // vTaskDelay(5000 / portTICK_PERIOD_MS);
+        
+        // ESP_LOGI(TAG, "Running Snake game demo...");
+        // snake_game_demo(&flip_dot, 30000);  // Run Snake demo for 30 seconds
+        
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        
         // ESP_LOGI(TAG, "Running sine wave demo...");
         // flip_dot_demo_sine_wave(&flip_dot, 150);
-        
-        // vTaskDelay(10000 / portTICK_PERIOD_MS);
-        
-
         
         // vTaskDelay(10000 / portTICK_PERIOD_MS);
         
@@ -55,8 +62,6 @@ void app_main(void)
         
         // ESP_LOGI(TAG, "Running Game of Life demo...");
         // flip_dot_demo_game_of_life(&flip_dot, 500, 50);
-        
-        vTaskDelay(10000 / portTICK_PERIOD_MS);
 
     }
 }
