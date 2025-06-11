@@ -14,6 +14,7 @@ This Snake game application is designed for the flip dot display system. It prov
 ## Game Mechanics
 - Snake starts with 3 segments in the center of the play area
 - Food spawns randomly in the play area (avoiding snake body)
+- Robust food generation with fallback positioning to prevent invalid positions
 - Snake grows by one segment when food is eaten
 - Score increases by 10 points per food item
 - Level increases every 50 points

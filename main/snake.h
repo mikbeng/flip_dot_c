@@ -44,12 +44,22 @@ typedef struct {
     uint8_t y;
 } position_t;
 
+// Input buffer for direction changes
+#define DIRECTION_BUFFER_SIZE 8
+
+typedef struct {
+    snake_direction_t buffer[DIRECTION_BUFFER_SIZE];
+    uint8_t head;  // Write position
+    uint8_t tail;  // Read position
+    uint8_t count; // Number of buffered directions
+} direction_buffer_t;
+
 // Snake segment structure
 typedef struct {
     position_t segments[SNAKE_MAX_LENGTH];
     uint8_t length;
     snake_direction_t direction;
-    snake_direction_t next_direction;  // Buffered direction change
+    direction_buffer_t input_buffer;  // Buffer for direction changes
 } snake_t;
 
 // Food structure
@@ -75,7 +85,7 @@ typedef struct {
  ******************************************************************************/
 
 // Game timing constants
-#define SNAKE_INITIAL_SPEED_MS 500
+#define SNAKE_INITIAL_SPEED_MS 350
 #define SNAKE_SPEED_DECREASE_PER_LEVEL 50
 #define SNAKE_MIN_SPEED_MS 100
 
@@ -110,9 +120,18 @@ void snake_game_show_score(snake_game_t *game);
 // Demo function
 void snake_game_demo(flip_dot_t *display, uint32_t duration_ms);
 
+// Interactive game function
+void snake_game_run_interactive(flip_dot_t *display);
+
 // Utility functions
 void snake_game_generate_food(snake_game_t *game);
 bool snake_game_check_collision(snake_game_t *game);
 bool snake_game_check_food_collision(snake_game_t *game);
+
+// Input buffer functions
+void direction_buffer_init(direction_buffer_t *buffer);
+bool direction_buffer_push(direction_buffer_t *buffer, snake_direction_t direction);
+bool direction_buffer_pop(direction_buffer_t *buffer, snake_direction_t *direction);
+bool direction_buffer_is_empty(direction_buffer_t *buffer);
 
 #endif /* SNAKE_H */ 

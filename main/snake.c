@@ -7,6 +7,7 @@
  */
 
 #include "snake.h"
+#include "input.h"
 #include <string.h>
 #include <stdlib.h>
 #include "esp_log.h"
@@ -38,7 +39,9 @@ static uint32_t get_random_number(uint32_t max);
 static void init_snake(snake_t *snake) {
     snake->length = SNAKE_INITIAL_LENGTH;
     snake->direction = DIR_RIGHT;
-    snake->next_direction = DIR_RIGHT;
+    
+    // Initialize input buffer
+    direction_buffer_init(&snake->input_buffer);
     
     // Initialize snake in the center of the play area
     uint8_t start_x = (GAME_MIN_X + GAME_MAX_X) / 2;
@@ -51,8 +54,24 @@ static void init_snake(snake_t *snake) {
 }
 
 static void move_snake(snake_t *snake) {
-    // Update direction if a direction change is buffered
-    snake->direction = snake->next_direction;
+    // Process next direction from buffer if available
+    snake_direction_t next_direction;
+    if (direction_buffer_pop(&snake->input_buffer, &next_direction)) {
+        // Validate direction change (prevent reversing into itself)
+        bool valid_change = true;
+        switch (snake->direction) {
+            case DIR_UP:    valid_change = (next_direction != DIR_DOWN); break;
+            case DIR_DOWN:  valid_change = (next_direction != DIR_UP); break;
+            case DIR_LEFT:  valid_change = (next_direction != DIR_RIGHT); break;
+            case DIR_RIGHT: valid_change = (next_direction != DIR_LEFT); break;
+        }
+        
+        if (valid_change) {
+            snake->direction = next_direction;
+        } else {
+            ESP_LOGD(TAG, "Invalid direction change blocked: %d -> %d", snake->direction, next_direction);
+        }
+    }
     
     // Calculate new head position
     position_t new_head = snake->segments[0];
@@ -70,6 +89,11 @@ static void move_snake(snake_t *snake) {
         case DIR_RIGHT:
             new_head.x++;
             break;
+    }
+    
+    // Debug: check if new head would be at (0,0)
+    if (new_head.x == 0 && new_head.y == 0) {
+        ESP_LOGW(TAG, "WARNING: New snake head would be at (0,0)!");
     }
     
     // Move body segments
@@ -105,6 +129,47 @@ static uint32_t get_random_number(uint32_t max) {
 }
 
 /******************************************************************************
+ * Input Buffer Functions
+ ******************************************************************************/
+
+void direction_buffer_init(direction_buffer_t *buffer) {
+    buffer->head = 0;
+    buffer->tail = 0;
+    buffer->count = 0;
+}
+
+bool direction_buffer_push(direction_buffer_t *buffer, snake_direction_t direction) {
+    if (buffer->count >= DIRECTION_BUFFER_SIZE) {
+        ESP_LOGW(TAG, "Direction buffer full, dropping input");
+        return false; // Buffer full
+    }
+    
+    buffer->buffer[buffer->head] = direction;
+    buffer->head = (buffer->head + 1) % DIRECTION_BUFFER_SIZE;
+    buffer->count++;
+    
+    ESP_LOGD(TAG, "Direction %d buffered (count: %d)", direction, buffer->count);
+    return true;
+}
+
+bool direction_buffer_pop(direction_buffer_t *buffer, snake_direction_t *direction) {
+    if (buffer->count == 0) {
+        return false; // Buffer empty
+    }
+    
+    *direction = buffer->buffer[buffer->tail];
+    buffer->tail = (buffer->tail + 1) % DIRECTION_BUFFER_SIZE;
+    buffer->count--;
+    
+    ESP_LOGD(TAG, "Direction %d popped from buffer (count: %d)", *direction, buffer->count);
+    return true;
+}
+
+bool direction_buffer_is_empty(direction_buffer_t *buffer) {
+    return buffer->count == 0;
+}
+
+/******************************************************************************
  * Public Function Implementations
  ******************************************************************************/
 
@@ -126,6 +191,8 @@ void snake_game_init(snake_game_t *game, flip_dot_t *display) {
     // Initialize food
     for (uint8_t i = 0; i < FOOD_COUNT; i++) {
         game->food[i].active = false;
+        game->food[i].position.x = 255;  // Invalid position
+        game->food[i].position.y = 255;  // Invalid position
     }
     
     // Generate initial food
@@ -148,6 +215,8 @@ void snake_game_reset(snake_game_t *game) {
     // Reset food
     for (uint8_t i = 0; i < FOOD_COUNT; i++) {
         game->food[i].active = false;
+        game->food[i].position.x = 255;  // Invalid position
+        game->food[i].position.y = 255;  // Invalid position
     }
     snake_game_generate_food(game);
     
@@ -180,6 +249,9 @@ void snake_game_update(snake_game_t *game) {
         return;
     }
     
+    // Store the tail position BEFORE moving, in case we need to grow
+    position_t tail_pos_before_move = game->snake.segments[game->snake.length - 1];
+    
     // Move snake
     move_snake(&game->snake);
     
@@ -194,9 +266,18 @@ void snake_game_update(snake_game_t *game) {
     if (snake_game_check_food_collision(game)) {
         ESP_LOGI(TAG, "Food eaten! Score: %ld", game->score);
         
-        // Increase snake length
+        // Increase snake length and properly initialize new tail
         if (game->snake.length < SNAKE_MAX_LENGTH) {
+            uint8_t old_length = game->snake.length;
+            
             game->snake.length++;
+            
+            // Set the new tail segment to where the tail was BEFORE the move
+            // This ensures immediate visual growth
+            game->snake.segments[game->snake.length - 1] = tail_pos_before_move;
+            
+            ESP_LOGI(TAG, "Snake length increased from %d to %d", old_length, game->snake.length);
+            ESP_LOGI(TAG, "New tail segment at (%d, %d) (tail pos before move)", tail_pos_before_move.x, tail_pos_before_move.y);
         }
         
         // Increase score
@@ -214,8 +295,10 @@ void snake_game_update(snake_game_t *game) {
             ESP_LOGI(TAG, "Level up! Level: %ld, Speed: %ld ms", game->level, game->game_speed_ms);
         }
         
-        // Generate new food
+        // Generate new food - with debug logging
+        ESP_LOGI(TAG, "Generating new food after eating...");
         snake_game_generate_food(game);
+        ESP_LOGI(TAG, "New food generation completed");
     }
     
     // Render the game
@@ -223,28 +306,9 @@ void snake_game_update(snake_game_t *game) {
 }
 
 void snake_game_change_direction(snake_game_t *game, snake_direction_t new_direction) {
-    // Prevent reversing into itself
-    switch (game->snake.direction) {
-        case DIR_UP:
-            if (new_direction != DIR_DOWN) {
-                game->snake.next_direction = new_direction;
-            }
-            break;
-        case DIR_DOWN:
-            if (new_direction != DIR_UP) {
-                game->snake.next_direction = new_direction;
-            }
-            break;
-        case DIR_LEFT:
-            if (new_direction != DIR_RIGHT) {
-                game->snake.next_direction = new_direction;
-            }
-            break;
-        case DIR_RIGHT:
-            if (new_direction != DIR_LEFT) {
-                game->snake.next_direction = new_direction;
-            }
-            break;
+    // Add direction to buffer - validation will happen in move_snake()
+    if (!direction_buffer_push(&game->snake.input_buffer, new_direction)) {
+        ESP_LOGW(TAG, "Failed to buffer direction change: %d", new_direction);
     }
 }
 
@@ -260,10 +324,17 @@ void snake_game_render(snake_game_t *game) {
     // Clear the game buffer
     clear_game_buffer(game->game_buffer);
     
+    // Debug: check if (0,0) gets set during snake drawing
+    bool pixel_0_0_set_by_snake = false;
+    
     // Draw snake
     for (uint8_t i = 0; i < game->snake.length; i++) {
         position_t pos = game->snake.segments[i];
         if (pos.x < DISPLAY_WIDTH && pos.y < DISPLAY_HEIGHT) {
+            if (pos.x == 0 && pos.y == 0) {
+                ESP_LOGW(TAG, "WARNING: Snake segment %d is at (0,0)!", i);
+                pixel_0_0_set_by_snake = true;
+            }
             game->game_buffer[pos.y][pos.x] = 1;
         }
     }
@@ -272,10 +343,29 @@ void snake_game_render(snake_game_t *game) {
     for (uint8_t i = 0; i < FOOD_COUNT; i++) {
         if (game->food[i].active) {
             position_t pos = game->food[i].position;
-            if (pos.x < DISPLAY_WIDTH && pos.y < DISPLAY_HEIGHT) {
+            
+            // Debug: log if we're about to draw at (0,0)
+            if (pos.x == 0 && pos.y == 0) {
+                ESP_LOGW(TAG, "WARNING: About to draw food at (0,0)! Deactivating food.");
+                game->food[i].active = false;
+                continue;
+            }
+            
+            // Extra bounds checking to prevent invalid positions
+            if (pos.x <= GAME_MAX_X && pos.y <= GAME_MAX_Y && 
+                pos.x < DISPLAY_WIDTH && pos.y < DISPLAY_HEIGHT) {
                 game->game_buffer[pos.y][pos.x] = 1;
+            } else {
+                ESP_LOGW(TAG, "Invalid food position (%d,%d), deactivating", pos.x, pos.y);
+                game->food[i].active = false;
             }
         }
+    }
+    
+    // Debug: check if (0,0) is set in the final buffer
+    if (game->game_buffer[0][0] == 1) {
+        ESP_LOGW(TAG, "WARNING: Pixel (0,0) is SET in game buffer! Snake: %s", 
+                 pixel_0_0_set_by_snake ? "YES" : "NO");
     }
     
     // Update the display
@@ -319,23 +409,62 @@ void snake_game_generate_food(snake_game_t *game) {
         }
     }
     
+    // Clear the position first to ensure no invalid data
+    game->food[food_index].position.x = 255;
+    game->food[food_index].position.y = 255;
+    game->food[food_index].active = false;
+    
     // Generate random position that's not in the snake
     position_t new_pos;
     uint8_t attempts = 0;
-    const uint8_t max_attempts = 100;
+    const uint8_t max_attempts = 200;  // Increased attempts
+    bool valid_pos_found = false;
     
+    // Exclude (0,0) from valid positions to prevent the top-left pixel issue
     do {
         new_pos.x = GAME_MIN_X + get_random_number(GAME_MAX_X - GAME_MIN_X + 1);
         new_pos.y = GAME_MIN_Y + get_random_number(GAME_MAX_Y - GAME_MIN_Y + 1);
         attempts++;
-    } while (is_position_in_snake(&game->snake, new_pos) && attempts < max_attempts);
+        
+        // Additional check: avoid (0,0) position temporarily for debugging
+        if (new_pos.x == 0 && new_pos.y == 0) {
+            continue;  // Skip (0,0) position
+        }
+        
+        if (!is_position_in_snake(&game->snake, new_pos)) {
+            valid_pos_found = true;
+        }
+    } while (!valid_pos_found && attempts < max_attempts);
     
-    if (attempts < max_attempts) {
+    if (valid_pos_found) {
         game->food[food_index].position = new_pos;
         game->food[food_index].active = true;
-        ESP_LOGD(TAG, "Food generated at (%d, %d)", new_pos.x, new_pos.y);
+        ESP_LOGI(TAG, "Food generated at (%d, %d)", new_pos.x, new_pos.y);
     } else {
-        ESP_LOGW(TAG, "Could not generate food after %d attempts", max_attempts);
+        // Fallback: place food at first available position (excluding 0,0)
+        ESP_LOGW(TAG, "Could not generate random food after %d attempts, using fallback", max_attempts);
+        bool found = false;
+        for (uint8_t y = GAME_MIN_Y; y <= GAME_MAX_Y && !found; y++) {
+            for (uint8_t x = GAME_MIN_X; x <= GAME_MAX_X && !found; x++) {
+                // Skip (0,0) position in fallback as well
+                if (x == 0 && y == 0) {
+                    continue;
+                }
+                
+                position_t test_pos = {x, y};
+                if (!is_position_in_snake(&game->snake, test_pos)) {
+                    game->food[food_index].position = test_pos;
+                    game->food[food_index].active = true;
+                    found = true;
+                    ESP_LOGI(TAG, "Fallback food generated at (%d, %d)", x, y);
+                }
+            }
+        }
+        
+        if (!found) {
+            ESP_LOGE(TAG, "Could not place food anywhere! Game area full?");
+            game->food[food_index].active = false;
+        }
     }
 }
 
@@ -419,4 +548,137 @@ void snake_game_demo(flip_dot_t *display, uint32_t duration_ms) {
     }
     
     ESP_LOGI(TAG, "Snake game demo completed");
+}
+
+/******************************************************************************
+ * Interactive Game Functions
+ ******************************************************************************/
+
+// Global variables for interactive game
+static snake_game_t *g_current_game = NULL;
+static input_system_t g_input_system;
+static bool g_game_exit_requested = false;
+
+// Input callback function
+static void snake_input_callback(input_event_t *event) {
+    if (!g_current_game || !event) {
+        return;
+    }
+    
+    snake_direction_t new_direction;
+    bool direction_changed = false;
+    
+    switch (event->command) {
+        case INPUT_CMD_UP:
+            new_direction = DIR_UP;
+            direction_changed = true;
+            break;
+        case INPUT_CMD_DOWN:
+            new_direction = DIR_DOWN;
+            direction_changed = true;
+            break;
+        case INPUT_CMD_LEFT:
+            new_direction = DIR_LEFT;
+            direction_changed = true;
+            break;
+        case INPUT_CMD_RIGHT:
+            new_direction = DIR_RIGHT;
+            direction_changed = true;
+            break;
+        case INPUT_CMD_PAUSE:
+            if (snake_game_is_running(g_current_game)) {
+                snake_game_pause(g_current_game);
+                ESP_LOGI(TAG, "Game paused");
+            } else if (g_current_game->state == GAME_PAUSED) {
+                snake_game_resume(g_current_game);
+                ESP_LOGI(TAG, "Game resumed");
+            } else if (g_current_game->state == GAME_INIT || g_current_game->state == GAME_OVER) {
+                snake_game_start(g_current_game);
+                ESP_LOGI(TAG, "Game started");
+            }
+            break;
+        case INPUT_CMD_RESET:
+            snake_game_reset(g_current_game);
+            ESP_LOGI(TAG, "Game reset");
+            break;
+        case INPUT_CMD_BACK:
+            g_game_exit_requested = true;
+            ESP_LOGI(TAG, "Exit requested");
+            break;
+        default:
+            // Ignore other commands
+            break;
+    }
+    
+    if (direction_changed && snake_game_is_running(g_current_game)) {
+        snake_game_change_direction(g_current_game, new_direction);
+        ESP_LOGD(TAG, "Direction changed to: %d", new_direction);
+    }
+}
+
+void snake_game_run_interactive(flip_dot_t *display) {
+    ESP_LOGI(TAG, "Starting interactive Snake game");
+    
+    // Initialize game
+    snake_game_t game;
+    snake_game_init(&game, display);
+    g_current_game = &game;
+    g_game_exit_requested = false;
+    
+    // Initialize input system
+    input_system_config_t input_config = input_get_default_config();
+    input_config.callback = snake_input_callback;
+    
+    esp_err_t ret = input_system_init(&g_input_system, &input_config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize input system: %s", esp_err_to_name(ret));
+        return;
+    }
+    
+    ret = input_system_start(&g_input_system);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start input system: %s", esp_err_to_name(ret));
+        input_system_deinit(&g_input_system);
+        return;
+    }
+    
+    // Initial game render
+    snake_game_render(&game);
+    
+    ESP_LOGI(TAG, "Interactive Snake game ready! Press 'P' to start the game.");
+    
+    uint32_t last_update = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    
+    // Game loop
+    while (!g_game_exit_requested) {
+        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        
+        // Process input
+        input_system_process(&g_input_system);
+        
+        // Update game at the appropriate speed
+        if (snake_game_is_running(&game) && 
+            (current_time - last_update >= game.game_speed_ms)) {
+            
+            snake_game_update(&game);
+            last_update = current_time;
+            
+            // Handle game over
+            if (snake_game_is_over(&game)) {
+                snake_game_show_game_over(&game);
+                snake_game_show_score(&game);
+                ESP_LOGI(TAG, "Game Over! Press 'R' to restart or 'B' to exit.");
+            }
+        }
+        
+        // Small delay to prevent busy waiting
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+    
+    // Cleanup
+    input_system_stop(&g_input_system);
+    input_system_deinit(&g_input_system);
+    g_current_game = NULL;
+    
+    ESP_LOGI(TAG, "Interactive Snake game ended");
 } 
