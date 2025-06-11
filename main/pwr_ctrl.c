@@ -177,7 +177,8 @@ esp_err_t disable_flip_board_logic_supply(void)
 esp_err_t enable_flip_board(void)
 {
     //Enable 24V supply
-    //enable_24V_supply();
+    //enable_24V_supply(); //We don't enable the 24V supply since we are supplying with 24V.
+    
     //Enable flip board logic supply
     enable_flip_board_logic_supply();
 

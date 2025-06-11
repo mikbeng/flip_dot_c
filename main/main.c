@@ -15,9 +15,6 @@ void app_main(void)
     init_power_control();
     int voltage_mv;
 
-    get_battery_voltage(&voltage_mv);
-    ESP_LOGI(TAG, "Battery voltage: %d mV", voltage_mv);
-
     //Initialize flip dot
     flip_dot_init(&flip_dot, 2000, SWEEP_ROW);
 
