@@ -23,7 +23,8 @@ typedef enum {
     INPUT_TYPE_SERIAL,
     INPUT_TYPE_BUTTON,
     INPUT_TYPE_ENCODER,
-    INPUT_TYPE_TOUCH
+    INPUT_TYPE_TOUCH,
+    INPUT_TYPE_ESPNOW  // Add ESP-NOW input type
 } input_type_t;
 
 // Input commands/keys
@@ -61,10 +62,18 @@ typedef struct {
     bool echo_enabled;
 } serial_input_config_t;
 
+// ESP-NOW input configuration
+typedef struct {
+    uint8_t channel;           // WiFi channel to use
+    bool enable_encryption;    // Enable encryption for ESP-NOW
+    uint8_t peer_mac[6];      // MAC address of the peer device
+} espnow_input_config_t;
+
 // Input system configuration
 typedef struct {
     input_type_t enabled_types;
     serial_input_config_t serial_config;
+    espnow_input_config_t espnow_config;  // Add ESP-NOW config
     input_callback_t callback;
 } input_system_config_t;
 
@@ -73,6 +82,7 @@ typedef struct {
     input_system_config_t config;
     bool initialized;
     bool serial_enabled;
+    bool espnow_enabled;      // Add ESP-NOW enabled flag
     uint8_t rx_buffer[256];
     size_t rx_buffer_pos;
 } input_system_t;
@@ -117,10 +127,18 @@ void input_system_deinit(input_system_t *input_sys);
 void input_system_process(input_system_t *input_sys);
 bool input_system_has_pending_input(input_system_t *input_sys);
 
+// Event handling
+void send_input_event(input_system_t *input_sys, input_command_t command, input_type_t type);
+
 // Serial input specific functions
 esp_err_t input_serial_init(input_system_t *input_sys);
 void input_serial_process(input_system_t *input_sys);
 void input_serial_send_prompt(input_system_t *input_sys, const char* prompt);
+
+// ESP-NOW specific functions
+esp_err_t input_espnow_init(input_system_t *input_sys);
+void input_espnow_process(input_system_t *input_sys);
+espnow_input_config_t input_get_default_espnow_config(void);
 
 // Utility functions
 const char* input_command_to_string(input_command_t command);

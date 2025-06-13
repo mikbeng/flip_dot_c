@@ -118,8 +118,6 @@ static bool is_position_in_snake(snake_t *snake, position_t pos) {
     return false;
 }
 
-
-
 static void clear_game_buffer(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH]) {
     memset(buffer, 0, DISPLAY_HEIGHT * DISPLAY_WIDTH);
 }
@@ -226,8 +224,13 @@ void snake_game_reset(snake_game_t *game) {
 }
 
 void snake_game_start(snake_game_t *game) {
-    ESP_LOGI(TAG, "Starting Snake game");
+    ESP_LOGI(TAG, "Starting Snake game from state: %d", game->state);
     game->state = GAME_RUNNING;
+    ESP_LOGI(TAG, "Game state changed to: %d", game->state);
+    
+    // Clear the display and render initial state
+    clear_game_buffer(game->game_buffer);
+    snake_game_render(game);
 }
 
 void snake_game_pause(snake_game_t *game) {
@@ -554,10 +557,9 @@ void snake_game_demo(flip_dot_t *display, uint32_t duration_ms) {
  * Interactive Game Functions
  ******************************************************************************/
 
-// Global variables for interactive game
+// Global variables for game state
 static snake_game_t *g_current_game = NULL;
 static input_system_t g_input_system;
-static bool g_game_exit_requested = false;
 
 // Input callback function
 static void snake_input_callback(input_event_t *event) {
@@ -565,69 +567,72 @@ static void snake_input_callback(input_event_t *event) {
         return;
     }
     
-    snake_direction_t new_direction;
-    bool direction_changed = false;
+    ESP_LOGI(TAG, "Input received: type=%d, cmd=%d, pressed=%d, game_state=%d", 
+             event->type, event->command, event->is_pressed, g_current_game->state);
+    
+    // Handle game start from any button press
+    if (g_current_game->state == GAME_INIT) {
+        if (event->type == INPUT_TYPE_ESPNOW && event->is_pressed) {
+            ESP_LOGI(TAG, "Starting game from button press");
+            snake_game_start(g_current_game);
+            return;
+        }
+    }
+    
+    // Only process direction changes if game is running
+    if (g_current_game->state != GAME_RUNNING) {
+        ESP_LOGD(TAG, "Ignoring input - game not running (state=%d)", g_current_game->state);
+        return;
+    }
+    
+    // Convert input command to snake direction
+    snake_direction_t new_direction = g_current_game->snake.direction;  // Keep current direction by default
     
     switch (event->command) {
         case INPUT_CMD_UP:
             new_direction = DIR_UP;
-            direction_changed = true;
             break;
         case INPUT_CMD_DOWN:
             new_direction = DIR_DOWN;
-            direction_changed = true;
             break;
         case INPUT_CMD_LEFT:
             new_direction = DIR_LEFT;
-            direction_changed = true;
             break;
         case INPUT_CMD_RIGHT:
             new_direction = DIR_RIGHT;
-            direction_changed = true;
             break;
         case INPUT_CMD_PAUSE:
-            if (snake_game_is_running(g_current_game)) {
+            if (g_current_game->state == GAME_RUNNING) {
                 snake_game_pause(g_current_game);
-                ESP_LOGI(TAG, "Game paused");
             } else if (g_current_game->state == GAME_PAUSED) {
                 snake_game_resume(g_current_game);
-                ESP_LOGI(TAG, "Game resumed");
-            } else if (g_current_game->state == GAME_INIT || g_current_game->state == GAME_OVER) {
-                snake_game_start(g_current_game);
-                ESP_LOGI(TAG, "Game started");
             }
-            break;
+            return;
         case INPUT_CMD_RESET:
             snake_game_reset(g_current_game);
-            ESP_LOGI(TAG, "Game reset");
-            break;
-        case INPUT_CMD_BACK:
-            g_game_exit_requested = true;
-            ESP_LOGI(TAG, "Exit requested");
-            break;
+            return;
         default:
-            // Ignore other commands
-            break;
+            return;  // Ignore other commands
     }
     
-    if (direction_changed && snake_game_is_running(g_current_game)) {
-        snake_game_change_direction(g_current_game, new_direction);
-        ESP_LOGD(TAG, "Direction changed to: %d", new_direction);
+    // Buffer the direction change
+    if (direction_buffer_push(&g_current_game->snake.input_buffer, new_direction)) {
+        ESP_LOGD(TAG, "Direction change buffered: %d", new_direction);
     }
 }
 
 void snake_game_run_interactive(flip_dot_t *display) {
-    ESP_LOGI(TAG, "Starting interactive Snake game");
-    
-    // Initialize game
     snake_game_t game;
     snake_game_init(&game, display);
     g_current_game = &game;
-    g_game_exit_requested = false;
     
-    // Initialize input system
+    ESP_LOGI(TAG, "Game initialized with state: %d", game.state);
+    
+    // Initialize input system with ESP-NOW enabled
     input_system_config_t input_config = input_get_default_config();
+    input_config.enabled_types = INPUT_TYPE_ESPNOW;  // Only enable ESP-NOW
     input_config.callback = snake_input_callback;
+    input_config.espnow_config = input_get_default_espnow_config();
     
     esp_err_t ret = input_system_init(&g_input_system, &input_config);
     if (ret != ESP_OK) {
@@ -642,43 +647,53 @@ void snake_game_run_interactive(flip_dot_t *display) {
         return;
     }
     
-    // Initial game render
+    // Show start screen
+    clear_game_buffer(game.game_buffer);
+    // Draw "PRESS ANY BUTTON" text
+    for (int y = 0; y < DISPLAY_HEIGHT; y++) {
+        for (int x = 0; x < DISPLAY_WIDTH; x++) {
+            if (y >= 2 && y <= 4) {  // Middle rows
+                game.game_buffer[y][x] = 1;  // Draw a line
+            }
+        }
+    }
     snake_game_render(&game);
+    ESP_LOGI(TAG, "Start screen displayed, waiting for button press");
     
-    ESP_LOGI(TAG, "Interactive Snake game ready! Press 'P' to start the game.");
-    
+    // Main game loop
     uint32_t last_update = xTaskGetTickCount() * portTICK_PERIOD_MS;
     
-    // Game loop
-    while (!g_game_exit_requested) {
+    while (1) {
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
         
         // Process input
         input_system_process(&g_input_system);
         
-        // Update game at the appropriate speed
-        if (snake_game_is_running(&game) && 
-            (current_time - last_update >= game.game_speed_ms)) {
-            
+        // Update game state at the appropriate speed
+        if (game.state == GAME_RUNNING && (current_time - last_update >= game.game_speed_ms)) {
             snake_game_update(&game);
             last_update = current_time;
             
-            // Handle game over
+            // Check for game over
             if (snake_game_is_over(&game)) {
                 snake_game_show_game_over(&game);
-                snake_game_show_score(&game);
-                ESP_LOGI(TAG, "Game Over! Press 'R' to restart or 'B' to exit.");
+                vTaskDelay(2000 / portTICK_PERIOD_MS);  // Show game over for 2 seconds
+                snake_game_reset(&game);
+                
+                // Show start screen again
+                clear_game_buffer(game.game_buffer);
+                for (int y = 0; y < DISPLAY_HEIGHT; y++) {
+                    for (int x = 0; x < DISPLAY_WIDTH; x++) {
+                        if (y >= 2 && y <= 4) {  // Middle rows
+                            game.game_buffer[y][x] = 1;  // Draw a line
+                        }
+                    }
+                }
+                snake_game_render(&game);
+                ESP_LOGI(TAG, "Game reset, showing start screen");
             }
         }
         
-        // Small delay to prevent busy waiting
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(10 / portTICK_PERIOD_MS);  // Small delay to prevent busy waiting
     }
-    
-    // Cleanup
-    input_system_stop(&g_input_system);
-    input_system_deinit(&g_input_system);
-    g_current_game = NULL;
-    
-    ESP_LOGI(TAG, "Interactive Snake game ended");
 } 

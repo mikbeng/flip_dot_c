@@ -30,7 +30,6 @@ static const char *TAG = "input_system";
 
 static void process_serial_char(input_system_t *input_sys, char c);
 static void process_arrow_sequence(input_system_t *input_sys, const char *seq);
-static void send_input_event(input_system_t *input_sys, input_command_t command, input_type_t type);
 static uint32_t get_timestamp_ms(void);
 
 /******************************************************************************
@@ -74,7 +73,7 @@ static void process_arrow_sequence(input_system_t *input_sys, const char *seq) {
     }
 }
 
-static void send_input_event(input_system_t *input_sys, input_command_t command, input_type_t type) {
+void send_input_event(input_system_t *input_sys, input_command_t command, input_type_t type) {
     if (input_sys->config.callback) {
         input_event_t event = {
             .type = type,
@@ -110,21 +109,41 @@ esp_err_t input_system_init(input_system_t *input_sys, input_system_config_t *co
     // Initialize state
     input_sys->initialized = false;
     input_sys->serial_enabled = false;
+    input_sys->espnow_enabled = false;
     input_sys->rx_buffer_pos = 0;
     memset(input_sys->rx_buffer, 0, sizeof(input_sys->rx_buffer));
     
-    // Initialize serial input if enabled
-    if (config->enabled_types == INPUT_TYPE_SERIAL) {
-        esp_err_t ret = input_serial_init(input_sys);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to initialize serial input: %s", esp_err_to_name(ret));
-            return ret;
-        }
-        input_sys->serial_enabled = true;
+    esp_err_t ret = ESP_OK;
+    
+    // Initialize the requested input type
+    switch (config->enabled_types) {
+        case INPUT_TYPE_SERIAL:
+            ret = input_serial_init(input_sys);
+            if (ret == ESP_OK) {
+                input_sys->serial_enabled = true;
+            }
+            break;
+            
+        case INPUT_TYPE_ESPNOW:
+            ret = input_espnow_init(input_sys);
+            if (ret == ESP_OK) {
+                input_sys->espnow_enabled = true;
+            }
+            break;
+            
+        default:
+            ESP_LOGE(TAG, "Unsupported input type: %d", config->enabled_types);
+            return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize input type %d: %s", 
+                 config->enabled_types, esp_err_to_name(ret));
+        return ret;
     }
     
     input_sys->initialized = true;
-    ESP_LOGI(TAG, "Input system initialized successfully");
+    ESP_LOGI(TAG, "Input system initialized successfully with type %d", config->enabled_types);
     
     return ESP_OK;
 }
@@ -174,8 +193,21 @@ void input_system_process(input_system_t *input_sys) {
         return;
     }
     
-    if (input_sys->serial_enabled) {
-        input_serial_process(input_sys);
+    switch (input_sys->config.enabled_types) {
+        case INPUT_TYPE_SERIAL:
+            if (input_sys->serial_enabled) {
+                input_serial_process(input_sys);
+            }
+            break;
+            
+        case INPUT_TYPE_ESPNOW:
+            if (input_sys->espnow_enabled) {
+                input_espnow_process(input_sys);
+            }
+            break;
+            
+        default:
+            break;
     }
 }
 
