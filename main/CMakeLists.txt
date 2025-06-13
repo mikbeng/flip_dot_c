@@ -2,7 +2,7 @@
 set(COMPONENT_REQUIRES )
 set(COMPONENT_PRIV_REQUIRES )
 
-set(COMPONENT_SRCS "main.c" "pwr_ctrl.c" "flip_dot.c")
+set(COMPONENT_SRCS "main.c" "pwr_ctrl.c" "flip_dot.c" "snake.c" "input.c")
 set(COMPONENT_ADD_INCLUDEDIRS ".")
 
 register_component()

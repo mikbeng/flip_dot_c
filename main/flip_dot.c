@@ -34,7 +34,7 @@
 #define PIN_ENABLE_1E 21
 #define PIN_ENABLE_2E 4
 
-const char *TAG = "flip_dot";
+static const char *TAG = "flip_dot";
 
 /******************************************************************************
  * Private Function Declarations
