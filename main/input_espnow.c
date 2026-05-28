@@ -158,7 +158,8 @@ espnow_input_config_t input_get_default_espnow_config(void) {
     espnow_input_config_t config = {
         .channel = 1,
         .enable_encryption = false,
-        .peer_mac = {0xE8, 0x9F, 0x6D, 0x21, 0x8F, 0xEC}  // Controller's MAC address
+        //.peer_mac = {0xE8, 0x9F, 0x6D, 0x21, 0x8F, 0xEC}  // Controller's MAC address
+        .peer_mac = {0x98, 0xa3, 0x16, 0x8f, 0x0b, 0xf0}  // Controller's MAC address 98:a3:16:8f:0b:f0
     };
     return config;
 } 

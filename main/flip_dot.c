@@ -460,12 +460,36 @@ void flip_dot_debug_pixel_calc(uint8_t row, uint8_t col, bool value) {
  * Demo Functions
  ******************************************************************************/
 
-void flip_dot_demo_sine_wave(flip_dot_t *display, uint32_t delay_ms) {
+static bool demo_frame_delay(uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort)
+{
+    const uint32_t step_ms = 10;
+    uint32_t elapsed_ms = 0;
+
+    while (elapsed_ms < delay_ms) {
+        if (should_abort && should_abort()) {
+            return true;
+        }
+        vTaskDelay(step_ms / portTICK_PERIOD_MS);
+        elapsed_ms += step_ms;
+    }
+    return false;
+}
+
+static bool demo_should_stop(flip_dot_demo_abort_cb_t should_abort)
+{
+    return should_abort && should_abort();
+}
+
+void flip_dot_demo_sine_wave(flip_dot_t *display, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort) {
     ESP_LOGI(TAG, "Starting sine wave demo");
     
     uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
     
     for (uint32_t frame = 0; frame < 200; frame++) {
+        if (demo_should_stop(should_abort)) {
+            return;
+        }
+
         // Clear the buffer
         memset(display_buffer, 0, sizeof(display_buffer));
         
@@ -493,11 +517,13 @@ void flip_dot_demo_sine_wave(flip_dot_t *display, uint32_t delay_ms) {
         
         // Update only changed pixels
         flip_dot_update_display(display, display_buffer);
-        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+        if (demo_frame_delay(delay_ms, should_abort)) {
+            return;
+        }
     }
 }
 
-void flip_dot_demo_bouncing_ball(flip_dot_t *display, uint32_t delay_ms) {
+void flip_dot_demo_bouncing_ball(flip_dot_t *display, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort) {
     ESP_LOGI(TAG, "Starting bouncing ball demo");
     
     uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
@@ -507,6 +533,10 @@ void flip_dot_demo_bouncing_ball(flip_dot_t *display, uint32_t delay_ms) {
     float vel_y = 0.6f;
     
     for (uint32_t frame = 0; frame < 300; frame++) {
+        if (demo_should_stop(should_abort)) {
+            return;
+        }
+
         // Clear the buffer
         memset(display_buffer, 0, sizeof(display_buffer));
         
@@ -540,11 +570,13 @@ void flip_dot_demo_bouncing_ball(flip_dot_t *display, uint32_t delay_ms) {
         
         // Update only changed pixels
         flip_dot_update_display(display, display_buffer);
-        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+        if (demo_frame_delay(delay_ms, should_abort)) {
+            return;
+        }
     }
 }
 
-void flip_dot_demo_matrix_rain(flip_dot_t *display, uint32_t delay_ms) {
+void flip_dot_demo_matrix_rain(flip_dot_t *display, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort) {
     ESP_LOGI(TAG, "Starting matrix rain demo");
     
     uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
@@ -559,6 +591,10 @@ void flip_dot_demo_matrix_rain(flip_dot_t *display, uint32_t delay_ms) {
     }
     
     for (uint32_t frame = 0; frame < 500; frame++) {
+        if (demo_should_stop(should_abort)) {
+            return;
+        }
+
         // Clear the buffer
         memset(display_buffer, 0, sizeof(display_buffer));
         
@@ -587,11 +623,13 @@ void flip_dot_demo_matrix_rain(flip_dot_t *display, uint32_t delay_ms) {
         
         // Update only changed pixels
         flip_dot_update_display(display, display_buffer);
-        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+        if (demo_frame_delay(delay_ms, should_abort)) {
+            return;
+        }
     }
 }
 
-void flip_dot_demo_ripple_effect(flip_dot_t *display, uint32_t delay_ms) {
+void flip_dot_demo_ripple_effect(flip_dot_t *display, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort) {
     ESP_LOGI(TAG, "Starting ripple effect demo");
     
     uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
@@ -599,6 +637,10 @@ void flip_dot_demo_ripple_effect(flip_dot_t *display, uint32_t delay_ms) {
     float center_y = DISPLAY_HEIGHT / 2.0f;
     
     for (uint32_t frame = 0; frame < 100; frame++) {
+        if (demo_should_stop(should_abort)) {
+            return;
+        }
+
         // Clear the buffer
         memset(display_buffer, 0, sizeof(display_buffer));
         
@@ -625,11 +667,13 @@ void flip_dot_demo_ripple_effect(flip_dot_t *display, uint32_t delay_ms) {
         
         // Update only changed pixels
         flip_dot_update_display(display, display_buffer);
-        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+        if (demo_frame_delay(delay_ms, should_abort)) {
+            return;
+        }
     }
 }
 
-void flip_dot_demo_scrolling_text(flip_dot_t *display, const char* text, uint32_t delay_ms) {
+void flip_dot_demo_scrolling_text(flip_dot_t *display, const char* text, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort) {
     ESP_LOGI(TAG, "Starting scrolling text demo: %s", text);
     
     uint8_t display_buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
@@ -642,6 +686,10 @@ void flip_dot_demo_scrolling_text(flip_dot_t *display, const char* text, uint32_
     int total_width = text_len * 6;  // 5 pixels + 1 space per character
     
     for (int offset = DISPLAY_WIDTH; offset > -total_width; offset--) {
+        if (demo_should_stop(should_abort)) {
+            return;
+        }
+
         // Clear the buffer
         memset(display_buffer, 0, sizeof(display_buffer));
         
@@ -672,11 +720,13 @@ void flip_dot_demo_scrolling_text(flip_dot_t *display, const char* text, uint32_
         
         // Update only changed pixels
         flip_dot_update_display(display, display_buffer);
-        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+        if (demo_frame_delay(delay_ms, should_abort)) {
+            return;
+        }
     }
 }
 
-void flip_dot_demo_game_of_life(flip_dot_t *display, uint32_t delay_ms, uint32_t generations) {
+void flip_dot_demo_game_of_life(flip_dot_t *display, uint32_t delay_ms, uint32_t generations, flip_dot_demo_abort_cb_t should_abort) {
     ESP_LOGI(TAG, "Starting Conway's Game of Life demo");
     
     uint8_t current_gen[DISPLAY_HEIGHT][DISPLAY_WIDTH];
@@ -690,6 +740,10 @@ void flip_dot_demo_game_of_life(flip_dot_t *display, uint32_t delay_ms, uint32_t
     }
     
     for (uint32_t gen = 0; gen < generations; gen++) {
+        if (demo_should_stop(should_abort)) {
+            return;
+        }
+
         // Calculate next generation
         for (uint8_t row = 0; row < DISPLAY_HEIGHT; row++) {
             for (uint8_t col = 0; col < DISPLAY_WIDTH; col++) {
@@ -728,7 +782,9 @@ void flip_dot_demo_game_of_life(flip_dot_t *display, uint32_t delay_ms, uint32_t
         
         // Copy next generation to current
         memcpy(current_gen, next_gen, sizeof(current_gen));
-        
-        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+
+        if (demo_frame_delay(delay_ms, should_abort)) {
+            return;
+        }
     }
 }
