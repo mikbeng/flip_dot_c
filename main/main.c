@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "flip_dot.h"
 #include "snake.h"
+#include "clock.h"
 #include "input.h"
 #include "driver/gpio.h"
 #include "esp_wifi.h"
@@ -192,15 +193,20 @@ static void run_demo_mode(flip_dot_t *display, app_mode_t *mode)
     }
 }
 
+static bool clock_should_abort(void)
+{
+    return poll_mode_switch(demo_abort_ctx.display, demo_abort_ctx.mode);
+}
+
 static void run_clock_mode(flip_dot_t *display, app_mode_t *mode)
 {
-    ESP_LOGI(TAG, "Entering clock mode (placeholder)");
+    ESP_LOGI(TAG, "Entering clock mode");
 
-    while (*mode == APP_MODE_CLOCK) {
-        if (poll_mode_switch(display, mode)) {
-            break;
-        }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+    demo_abort_ctx.display = display;
+    demo_abort_ctx.mode = mode;
+
+    if (*mode == APP_MODE_CLOCK) {
+        clock_app_run(display, clock_should_abort);
     }
 }
 
