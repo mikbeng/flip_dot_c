@@ -300,7 +300,9 @@ void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t swee
     // Set parameters
     display->flip_time_us = flip_time_us;
     display->sweep_mode = sweep_mode;
-    
+    display->pixel_delay_min_ms = 0;
+    display->pixel_delay_max_ms = 0;
+
     // Initialize pixel state to all zeros
     memset(display->pixel_state, 0, sizeof(display->pixel_state));
     
@@ -310,6 +312,22 @@ void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t swee
     delay_ms(200);
     
     delay_ms(200);
+}
+
+void flip_dot_set_update_effect(flip_dot_t *display, sweep_mode_t sweep_mode,
+                                uint16_t pixel_delay_min_ms, uint16_t pixel_delay_max_ms)
+{
+    display->sweep_mode = sweep_mode;
+    display->pixel_delay_min_ms = pixel_delay_min_ms;
+    display->pixel_delay_max_ms = pixel_delay_max_ms;
+}
+
+static uint16_t random_pixel_delay_ms(uint16_t min_ms, uint16_t max_ms)
+{
+    if (max_ms <= min_ms) {
+        return min_ms;
+    }
+    return min_ms + (rand() % (max_ms - min_ms + 1));
 }
 
 void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool value) {
@@ -415,6 +433,11 @@ void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEI
         uint8_t r = flip_list[i][0];
         uint8_t c = flip_list[i][1];
         flip_dot_set_pixel(display, r, c, data[r][c]);
+
+        if (i + 1 < flip_count && display->pixel_delay_max_ms > 0) {
+            delay_ms(random_pixel_delay_ms(display->pixel_delay_min_ms,
+                                           display->pixel_delay_max_ms));
+        }
     }
     
     // Update display state

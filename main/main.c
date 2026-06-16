@@ -247,7 +247,7 @@ void app_main(void)
         return;
     }
 
-    app_mode_t mode = APP_MODE_DEMO;
+    app_mode_t mode = APP_MODE_CLOCK;
     ESP_LOGI(TAG, "Starting in %s mode (press switch to change)", mode_name(mode));
 
     while (1) {

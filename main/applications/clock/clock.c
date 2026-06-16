@@ -11,6 +11,11 @@
 
 static const char *TAG = "clock";
 
+/* Update effect tuning — sweep order and per-pixel delay between flips. */
+#define CLOCK_SWEEP_MODE           SWEEP_RANDOM
+#define CLOCK_PIXEL_DELAY_MIN_MS   100
+#define CLOCK_PIXEL_DELAY_MAX_MS   400
+
 #define FONT_WIDTH  5
 #define FONT_HEIGHT 7
 #define CHAR_GAP    1
@@ -102,6 +107,12 @@ void clock_app_run(flip_dot_t *display, clock_app_abort_cb_t should_abort)
     uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
     int last_second = -1;
 
+    const sweep_mode_t prev_sweep = display->sweep_mode;
+    const uint16_t prev_delay_min = display->pixel_delay_min_ms;
+    const uint16_t prev_delay_max = display->pixel_delay_max_ms;
+    flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
+                               CLOCK_PIXEL_DELAY_MIN_MS, CLOCK_PIXEL_DELAY_MAX_MS);
+
     s_start_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
     ESP_LOGI(TAG, "Elapsed MM:SS from mode entry");
 
@@ -123,4 +134,6 @@ void clock_app_run(flip_dot_t *display, clock_app_abort_cb_t should_abort)
 
         vTaskDelay(50 / portTICK_PERIOD_MS);
     }
+
+    flip_dot_set_update_effect(display, prev_sweep, prev_delay_min, prev_delay_max);
 }

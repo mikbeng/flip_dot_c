@@ -59,6 +59,8 @@ typedef struct {
     demux_74HC4514_t row_demux;
     uint32_t flip_time_us;
     sweep_mode_t sweep_mode;
+    uint16_t pixel_delay_min_ms;
+    uint16_t pixel_delay_max_ms;
     uint8_t pixel_state[DISPLAY_HEIGHT][DISPLAY_WIDTH];
 } flip_dot_t;
 
@@ -73,6 +75,8 @@ typedef struct {
 
 // Flip dot display functions
 void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t sweep_mode);
+void flip_dot_set_update_effect(flip_dot_t *display, sweep_mode_t sweep_mode,
+                                uint16_t pixel_delay_min_ms, uint16_t pixel_delay_max_ms);
 void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool value);
 void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH]);
 void flip_dot_set_rows_cols(flip_dot_t *display, uint8_t row_start, uint8_t row_end, uint8_t col_start, uint8_t col_end, bool pixel_value);
