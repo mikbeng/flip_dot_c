@@ -1,6 +1,6 @@
 /**
  * @file clock.h
- * @brief MM:SS clock application for flip dot display
+ * @brief HH:MM clock application for flip dot display
  */
 
 #ifndef CLOCK_H
@@ -14,8 +14,7 @@ typedef bool (*clock_app_abort_cb_t)(void);
 
 /**
  * Run the clock until should_abort returns true (or NULL to run forever).
- * Renders MM:SS centered on the display and refreshes once per second.
- * Counts up from 00:00 while the mode is active.
+ * Renders HH:MM from SNTP wall time and refreshes the display once per minute.
  */
 void clock_app_run(flip_dot_t *display, clock_app_abort_cb_t should_abort);
 

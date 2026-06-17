@@ -1,20 +1,35 @@
 /**
  * @file clock.c
- * @brief MM:SS clock application implementation
+ * @brief HH:MM clock application implementation
  */
 
 #include "clock.h"
 #include "esp_log.h"
+#include "esp_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 #include <string.h>
+#include <time.h>
+#include <sys/time.h>
 
 static const char *TAG = "clock";
 
 /* Update effect tuning — sweep order and per-pixel delay between flips. */
 #define CLOCK_SWEEP_MODE           SWEEP_RANDOM
-#define CLOCK_PIXEL_DELAY_MIN_MS   100
-#define CLOCK_PIXEL_DELAY_MAX_MS   400
+#define CLOCK_PIXEL_DELAY_MIN_MS   10 //100 Good value without noise feature
+#define CLOCK_PIXEL_DELAY_MAX_MS   50 //400 Good value without noise feature
+
+/* Pre-settle noise around pixels that are about to change. */
+#define CLOCK_NOISE_ENABLED              true
+#define CLOCK_NOISE_VICINITY_MARGIN      2
+#define CLOCK_NOISE_INCLUDE_PROBABILITY  35
+#define CLOCK_NOISE_FLIPS_MIN            2
+#define CLOCK_NOISE_FLIPS_MAX            4
+#define CLOCK_NOISE_FLIP_DELAY_MS        10
+
+#define SNTP_SYNC_TIMEOUT_MS  30000
+#define SNTP_POLL_INTERVAL_MS 100
 
 #define FONT_WIDTH  5
 #define FONT_HEIGHT 7
@@ -37,14 +52,63 @@ static const uint8_t GLYPH_DIGITS[10][FONT_WIDTH] = {
 
 static const uint8_t GLYPH_COLON[COLON_WIDTH] = {0x00, 0x24};
 
-static uint32_t s_start_ms;
+static bool s_sntp_started;
 
-static void clock_get_mm_ss(uint8_t *mm, uint8_t *ss)
+static bool time_is_valid(time_t t)
 {
-    uint32_t elapsed_ms = (xTaskGetTickCount() * portTICK_PERIOD_MS) - s_start_ms;
-    uint32_t total_sec = elapsed_ms / 1000;
-    *mm = (uint8_t)((total_sec / 60) % 60);
-    *ss = (uint8_t)(total_sec % 60);
+    return t > 1577836800; /* 2020-01-01 */
+}
+
+static void clock_sntp_start(void)
+{
+    if (s_sntp_started) {
+        return;
+    }
+
+    setenv("TZ", CONFIG_CLOCK_TIMEZONE, 1);
+    tzset();
+
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+    s_sntp_started = true;
+    ESP_LOGI(TAG, "SNTP started (timezone: %s)", CONFIG_CLOCK_TIMEZONE);
+}
+
+static bool clock_wait_for_sync(clock_app_abort_cb_t should_abort)
+{
+    const uint32_t step_ms = 200;
+    uint32_t waited_ms = 0;
+
+    while (waited_ms < SNTP_SYNC_TIMEOUT_MS) {
+        if (should_abort && should_abort()) {
+            return false;
+        }
+
+        time_t now;
+        time(&now);
+        if (time_is_valid(now)) {
+            ESP_LOGI(TAG, "Time synced");
+            return true;
+        }
+
+        vTaskDelay(step_ms / portTICK_PERIOD_MS);
+        waited_ms += step_ms;
+    }
+
+    ESP_LOGE(TAG, "SNTP sync timed out after %u ms", SNTP_SYNC_TIMEOUT_MS);
+    return false;
+}
+
+static bool clock_get_local_time(struct tm *local)
+{
+    time_t now;
+    time(&now);
+    if (!time_is_valid(now)) {
+        return false;
+    }
+    localtime_r(&now, local);
+    return true;
 }
 
 static void draw_glyph(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH],
@@ -75,7 +139,7 @@ static int clock_string_width(void)
 }
 
 static void clock_render(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH],
-                         uint8_t mm, uint8_t ss)
+                         uint8_t hh, uint8_t mm)
 {
     memset(buffer, 0, DISPLAY_HEIGHT * DISPLAY_WIDTH);
 
@@ -84,8 +148,8 @@ static void clock_render(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH],
     const int origin_y = (DISPLAY_HEIGHT - FONT_HEIGHT) / 2;
 
     uint8_t digits[4] = {
+        hh / 10, hh % 10,
         mm / 10, mm % 10,
-        ss / 10, ss % 10,
     };
 
     int x = origin_x;
@@ -105,35 +169,58 @@ static void clock_render(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH],
 void clock_app_run(flip_dot_t *display, clock_app_abort_cb_t should_abort)
 {
     uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
-    int last_second = -1;
+    int last_display_key = -1;
 
     const sweep_mode_t prev_sweep = display->sweep_mode;
     const uint16_t prev_delay_min = display->pixel_delay_min_ms;
     const uint16_t prev_delay_max = display->pixel_delay_max_ms;
+    const flip_dot_noise_effect_t prev_noise = display->noise_effect;
+
     flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
                                CLOCK_PIXEL_DELAY_MIN_MS, CLOCK_PIXEL_DELAY_MAX_MS);
 
-    s_start_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    ESP_LOGI(TAG, "Elapsed MM:SS from mode entry");
+    const flip_dot_noise_effect_t clock_noise = {
+        .enabled = CLOCK_NOISE_ENABLED,
+        .vicinity_margin = CLOCK_NOISE_VICINITY_MARGIN,
+        .include_probability_pct = CLOCK_NOISE_INCLUDE_PROBABILITY,
+        .noise_flips_min = CLOCK_NOISE_FLIPS_MIN,
+        .noise_flips_max = CLOCK_NOISE_FLIPS_MAX,
+        .noise_flip_delay_ms = CLOCK_NOISE_FLIP_DELAY_MS,
+    };
+    flip_dot_set_noise_effect(display, &clock_noise);
+
+    clock_sntp_start();
+    if (!clock_wait_for_sync(should_abort)) {
+        flip_dot_set_update_effect(display, prev_sweep, prev_delay_min, prev_delay_max);
+        flip_dot_set_noise_effect(display, &prev_noise);
+        return;
+    }
 
     while (1) {
         if (should_abort && should_abort()) {
             break;
         }
 
-        uint8_t mm;
-        uint8_t ss;
-        clock_get_mm_ss(&mm, &ss);
-
-        if ((int)ss != last_second) {
-            clock_render(buffer, mm, ss);
-            flip_dot_update_display(display, buffer);
-            last_second = (int)ss;
-            ESP_LOGD(TAG, "%02u:%02u", mm, ss);
+        struct tm local;
+        if (!clock_get_local_time(&local)) {
+            ESP_LOGW(TAG, "Lost time sync, waiting...");
+            if (!clock_wait_for_sync(should_abort)) {
+                break;
+            }
+            continue;
         }
 
-        vTaskDelay(50 / portTICK_PERIOD_MS);
+        const int display_key = local.tm_hour * 60 + local.tm_min;
+        if (display_key != last_display_key) {
+            clock_render(buffer, (uint8_t)local.tm_hour, (uint8_t)local.tm_min);
+            flip_dot_update_display(display, buffer);
+            last_display_key = display_key;
+            ESP_LOGI(TAG, "Display updated: %02d:%02d", local.tm_hour, local.tm_min);
+        }
+
+        vTaskDelay(SNTP_POLL_INTERVAL_MS / portTICK_PERIOD_MS);
     }
 
     flip_dot_set_update_effect(display, prev_sweep, prev_delay_min, prev_delay_max);
+    flip_dot_set_noise_effect(display, &prev_noise);
 }

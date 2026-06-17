@@ -28,6 +28,16 @@ typedef enum {
     SWEEP_RANDOM
 } sweep_mode_t;
 
+// Pre-update noise around pixels that are about to change
+typedef struct {
+    bool enabled;
+    uint8_t vicinity_margin;           /* expand changed-pixel bbox by this many pixels */
+    uint8_t include_probability_pct;   /* chance (0-100) for unchanged neighbors to join */
+    uint8_t noise_flips_min;           /* min random toggles before settle */
+    uint8_t noise_flips_max;
+    uint16_t noise_flip_delay_ms;      /* fixed delay between noise toggles */
+} flip_dot_noise_effect_t;
+
 // GPIO pin mapping
 typedef struct {
     uint8_t pin;
@@ -61,6 +71,7 @@ typedef struct {
     sweep_mode_t sweep_mode;
     uint16_t pixel_delay_min_ms;
     uint16_t pixel_delay_max_ms;
+    flip_dot_noise_effect_t noise_effect;
     uint8_t pixel_state[DISPLAY_HEIGHT][DISPLAY_WIDTH];
 } flip_dot_t;
 
@@ -77,6 +88,7 @@ typedef struct {
 void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t sweep_mode);
 void flip_dot_set_update_effect(flip_dot_t *display, sweep_mode_t sweep_mode,
                                 uint16_t pixel_delay_min_ms, uint16_t pixel_delay_max_ms);
+void flip_dot_set_noise_effect(flip_dot_t *display, const flip_dot_noise_effect_t *effect);
 void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool value);
 void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH]);
 void flip_dot_set_rows_cols(flip_dot_t *display, uint8_t row_start, uint8_t row_end, uint8_t col_start, uint8_t col_end, bool pixel_value);

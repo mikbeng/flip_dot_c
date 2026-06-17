@@ -89,6 +89,8 @@ static void delay_ms(uint32_t ms) {
     vTaskDelay(ms / portTICK_PERIOD_MS);
 }
 
+void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool value);
+
 // Converts a decimal number to binary array
 static void decimal_to_bin(uint8_t number, uint8_t bits, uint8_t *binary_arr) {
     for (int i = bits-1; i >= 0; i--) {
@@ -302,6 +304,7 @@ void flip_dot_init(flip_dot_t *display, uint32_t flip_time_us, sweep_mode_t swee
     display->sweep_mode = sweep_mode;
     display->pixel_delay_min_ms = 0;
     display->pixel_delay_max_ms = 0;
+    display->noise_effect.enabled = false;
 
     // Initialize pixel state to all zeros
     memset(display->pixel_state, 0, sizeof(display->pixel_state));
@@ -322,12 +325,178 @@ void flip_dot_set_update_effect(flip_dot_t *display, sweep_mode_t sweep_mode,
     display->pixel_delay_max_ms = pixel_delay_max_ms;
 }
 
+void flip_dot_set_noise_effect(flip_dot_t *display, const flip_dot_noise_effect_t *effect)
+{
+    if (effect) {
+        display->noise_effect = *effect;
+    } else {
+        display->noise_effect.enabled = false;
+    }
+}
+
 static uint16_t random_pixel_delay_ms(uint16_t min_ms, uint16_t max_ms)
 {
     if (max_ms <= min_ms) {
         return min_ms;
     }
     return min_ms + (rand() % (max_ms - min_ms + 1));
+}
+
+static uint8_t random_noise_flip_count(const flip_dot_noise_effect_t *fx)
+{
+    if (fx->noise_flips_max <= fx->noise_flips_min) {
+        return fx->noise_flips_min;
+    }
+    return fx->noise_flips_min + (rand() % (fx->noise_flips_max - fx->noise_flips_min + 1));
+}
+
+static bool find_nth_active_pixel(const uint8_t remaining[DISPLAY_HEIGHT][DISPLAY_WIDTH],
+                                  uint16_t n, uint8_t *row, uint8_t *col)
+{
+    uint16_t idx = 0;
+    for (uint8_t r = 0; r < DISPLAY_HEIGHT; r++) {
+        for (uint8_t c = 0; c < DISPLAY_WIDTH; c++) {
+            if (remaining[r][c] == 0) {
+                continue;
+            }
+            if (idx == n) {
+                *row = r;
+                *col = c;
+                return true;
+            }
+            idx++;
+        }
+    }
+    return false;
+}
+
+static void flip_dot_run_noise_phase(flip_dot_t *display,
+                                     const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH],
+                                     const uint8_t flip_list[DISPLAY_HEIGHT * DISPLAY_WIDTH][2],
+                                     uint16_t flip_count)
+{
+    const flip_dot_noise_effect_t *fx = &display->noise_effect;
+    if (!fx->enabled || fx->noise_flips_max == 0 || flip_count == 0) {
+        return;
+    }
+
+    uint8_t min_r = DISPLAY_HEIGHT - 1;
+    uint8_t max_r = 0;
+    uint8_t min_c = DISPLAY_WIDTH - 1;
+    uint8_t max_c = 0;
+
+    for (uint16_t i = 0; i < flip_count; i++) {
+        uint8_t r = flip_list[i][0];
+        uint8_t c = flip_list[i][1];
+        if (r < min_r) min_r = r;
+        if (r > max_r) max_r = r;
+        if (c < min_c) min_c = c;
+        if (c > max_c) max_c = c;
+    }
+
+    if (fx->vicinity_margin > 0) {
+        min_r = (min_r > fx->vicinity_margin) ? min_r - fx->vicinity_margin : 0;
+        max_r = (max_r + fx->vicinity_margin < DISPLAY_HEIGHT) ? max_r + fx->vicinity_margin : DISPLAY_HEIGHT - 1;
+        min_c = (min_c > fx->vicinity_margin) ? min_c - fx->vicinity_margin : 0;
+        max_c = (max_c + fx->vicinity_margin < DISPLAY_WIDTH) ? max_c + fx->vicinity_margin : DISPLAY_WIDTH - 1;
+    }
+
+    uint8_t remaining[DISPLAY_HEIGHT][DISPLAY_WIDTH] = {0};
+    uint16_t active_count = 0;
+
+    for (uint8_t r = min_r; r <= max_r; r++) {
+        for (uint8_t c = min_c; c <= max_c; c++) {
+            bool is_target = data[r][c] != display->pixel_state[r][c];
+            bool include = is_target;
+
+            if (!include && fx->include_probability_pct > 0) {
+                include = (rand() % 100) < fx->include_probability_pct;
+            }
+            if (!include) {
+                continue;
+            }
+
+            uint8_t flips = random_noise_flip_count(fx);
+            if (flips == 0) {
+                continue;
+            }
+
+            remaining[r][c] = flips;
+            active_count++;
+        }
+    }
+
+    while (active_count > 0) {
+        uint8_t r;
+        uint8_t c;
+        if (!find_nth_active_pixel(remaining, rand() % active_count, &r, &c)) {
+            break;
+        }
+
+        flip_dot_set_pixel(display, r, c, !display->pixel_state[r][c]);
+        remaining[r][c]--;
+        if (remaining[r][c] == 0) {
+            active_count--;
+        }
+
+        if (fx->noise_flip_delay_ms > 0) {
+            delay_ms(fx->noise_flip_delay_ms);
+        }
+    }
+}
+
+static void flip_dot_apply_settle_phase(flip_dot_t *display,
+                                        const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH],
+                                        uint8_t flip_list[DISPLAY_HEIGHT * DISPLAY_WIDTH][2],
+                                        uint16_t flip_count)
+{
+    switch (display->sweep_mode) {
+        case SWEEP_ROW:
+            break;
+
+        case SWEEP_COL:
+            for (uint16_t i = 0; i < flip_count; i++) {
+                for (uint16_t j = i + 1; j < flip_count; j++) {
+                    if (flip_list[i][1] > flip_list[j][1]) {
+                        uint8_t temp_r = flip_list[i][0];
+                        uint8_t temp_c = flip_list[i][1];
+                        flip_list[i][0] = flip_list[j][0];
+                        flip_list[i][1] = flip_list[j][1];
+                        flip_list[j][0] = temp_r;
+                        flip_list[j][1] = temp_c;
+                    }
+                }
+            }
+            break;
+
+        case SWEEP_RANDOM:
+            for (uint16_t i = flip_count - 1; i > 0; i--) {
+                uint16_t j = rand() % (i + 1);
+                uint8_t temp_r = flip_list[i][0];
+                uint8_t temp_c = flip_list[i][1];
+                flip_list[i][0] = flip_list[j][0];
+                flip_list[i][1] = flip_list[j][1];
+                flip_list[j][0] = temp_r;
+                flip_list[j][1] = temp_c;
+            }
+            break;
+
+        case SWEEP_DIAG:
+            break;
+    }
+
+    for (uint16_t i = 0; i < flip_count; i++) {
+        uint8_t r = flip_list[i][0];
+        uint8_t c = flip_list[i][1];
+        flip_dot_set_pixel(display, r, c, data[r][c]);
+
+        if (i + 1 < flip_count && display->pixel_delay_max_ms > 0) {
+            delay_ms(random_pixel_delay_ms(display->pixel_delay_min_ms,
+                                           display->pixel_delay_max_ms));
+        }
+    }
+
+    memcpy(display->pixel_state, data, sizeof(display->pixel_state));
 }
 
 void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool value) {
@@ -372,10 +541,9 @@ void flip_dot_clear_display(flip_dot_t *display) {
 }
 
 void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH]) {
-    // Find which pixels need to change
     uint8_t flip_list[DISPLAY_HEIGHT * DISPLAY_WIDTH][2];
     uint16_t flip_count = 0;
-    
+
     for (uint8_t r = 0; r < DISPLAY_HEIGHT; r++) {
         for (uint8_t c = 0; c < DISPLAY_WIDTH; c++) {
             if (data[r][c] != display->pixel_state[r][c]) {
@@ -385,63 +553,31 @@ void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEI
             }
         }
     }
-    
-    // Sort flip list according to sweep mode
-    switch (display->sweep_mode) {
-        case SWEEP_ROW:
-            // Already in row-by-row order
-            break;
-            
-        case SWEEP_COL:
-            // Sort by column
-            for (uint16_t i = 0; i < flip_count; i++) {
-                for (uint16_t j = i + 1; j < flip_count; j++) {
-                    if (flip_list[i][1] > flip_list[j][1]) {
-                        // Swap
-                        uint8_t temp_r = flip_list[i][0];
-                        uint8_t temp_c = flip_list[i][1];
-                        flip_list[i][0] = flip_list[j][0];
-                        flip_list[i][1] = flip_list[j][1];
-                        flip_list[j][0] = temp_r;
-                        flip_list[j][1] = temp_c;
-                    }
-                }
-            }
-            break;
-            
-        case SWEEP_RANDOM:
-            // Simple Fisher-Yates shuffle
-            for (uint16_t i = flip_count - 1; i > 0; i--) {
-                uint16_t j = rand() % (i + 1);
-                // Swap
-                uint8_t temp_r = flip_list[i][0];
-                uint8_t temp_c = flip_list[i][1];
-                flip_list[i][0] = flip_list[j][0];
-                flip_list[i][1] = flip_list[j][1];
-                flip_list[j][0] = temp_r;
-                flip_list[j][1] = temp_c;
-            }
-            break;
-            
-        case SWEEP_DIAG:
-            // Not implemented yet
-            break;
-    }
-    
-    // Set pixels according to the flip list
-    for (uint16_t i = 0; i < flip_count; i++) {
-        uint8_t r = flip_list[i][0];
-        uint8_t c = flip_list[i][1];
-        flip_dot_set_pixel(display, r, c, data[r][c]);
 
-        if (i + 1 < flip_count && display->pixel_delay_max_ms > 0) {
-            delay_ms(random_pixel_delay_ms(display->pixel_delay_min_ms,
-                                           display->pixel_delay_max_ms));
+    if (flip_count == 0) {
+        return;
+    }
+
+    flip_dot_run_noise_phase(display, data, flip_list, flip_count);
+
+    /* Rebuild flip list — noise may have moved some pixels onto their target. */
+    flip_count = 0;
+    for (uint8_t r = 0; r < DISPLAY_HEIGHT; r++) {
+        for (uint8_t c = 0; c < DISPLAY_WIDTH; c++) {
+            if (data[r][c] != display->pixel_state[r][c]) {
+                flip_list[flip_count][0] = r;
+                flip_list[flip_count][1] = c;
+                flip_count++;
+            }
         }
     }
-    
-    // Update display state
-    memcpy(display->pixel_state, data, sizeof(display->pixel_state));
+
+    if (flip_count == 0) {
+        memcpy(display->pixel_state, data, sizeof(display->pixel_state));
+        return;
+    }
+
+    flip_dot_apply_settle_phase(display, data, flip_list, flip_count);
 }
 
 void flip_dot_set_rows_cols(flip_dot_t *display, uint8_t row_start, uint8_t row_end, uint8_t col_start, uint8_t col_end, bool pixel_value) {
