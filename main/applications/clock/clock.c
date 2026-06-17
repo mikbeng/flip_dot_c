@@ -16,11 +16,17 @@
 static const char *TAG = "clock";
 
 /* Update effect tuning — sweep order and per-pixel delay between flips. */
-#define CLOCK_SWEEP_MODE           SWEEP_RANDOM
-#define CLOCK_PIXEL_DELAY_MIN_MS   10 //100 Good value without noise feature
-#define CLOCK_PIXEL_DELAY_MAX_MS   50 //400 Good value without noise feature
+#define CLOCK_SWEEP_MODE                 SWEEP_RANDOM
 
-/* Pre-settle noise around pixels that are about to change. */
+/* Hour rollover: pre-settle noise with shorter per-pixel delays. */
+#define CLOCK_HOUR_PIXEL_DELAY_MIN_MS    10
+#define CLOCK_HOUR_PIXEL_DELAY_MAX_MS    50
+
+/* Minute tick: random sweep only, longer delays, no noise. */
+#define CLOCK_MINUTE_PIXEL_DELAY_MIN_MS  100
+#define CLOCK_MINUTE_PIXEL_DELAY_MAX_MS  400
+
+/* Pre-settle noise around pixels that are about to change (hour updates only). */
 #define CLOCK_NOISE_ENABLED              true
 #define CLOCK_NOISE_VICINITY_MARGIN      2
 #define CLOCK_NOISE_INCLUDE_PROBABILITY  35
@@ -176,10 +182,7 @@ void clock_app_run(flip_dot_t *display, clock_app_abort_cb_t should_abort)
     const uint16_t prev_delay_max = display->pixel_delay_max_ms;
     const flip_dot_noise_effect_t prev_noise = display->noise_effect;
 
-    flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
-                               CLOCK_PIXEL_DELAY_MIN_MS, CLOCK_PIXEL_DELAY_MAX_MS);
-
-    const flip_dot_noise_effect_t clock_noise = {
+    flip_dot_noise_effect_t clock_noise = {
         .enabled = CLOCK_NOISE_ENABLED,
         .vicinity_margin = CLOCK_NOISE_VICINITY_MARGIN,
         .include_probability_pct = CLOCK_NOISE_INCLUDE_PROBABILITY,
@@ -187,7 +190,6 @@ void clock_app_run(flip_dot_t *display, clock_app_abort_cb_t should_abort)
         .noise_flips_max = CLOCK_NOISE_FLIPS_MAX,
         .noise_flip_delay_ms = CLOCK_NOISE_FLIP_DELAY_MS,
     };
-    flip_dot_set_noise_effect(display, &clock_noise);
 
     clock_sntp_start();
     if (!clock_wait_for_sync(should_abort)) {
@@ -212,10 +214,28 @@ void clock_app_run(flip_dot_t *display, clock_app_abort_cb_t should_abort)
 
         const int display_key = local.tm_hour * 60 + local.tm_min;
         if (display_key != last_display_key) {
+            const bool hour_changed = last_display_key < 0
+                || (last_display_key / 60) != local.tm_hour;
+
+            if (hour_changed) {
+                flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
+                                           CLOCK_HOUR_PIXEL_DELAY_MIN_MS,
+                                           CLOCK_HOUR_PIXEL_DELAY_MAX_MS);
+                clock_noise.enabled = true;
+            } else {
+                flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
+                                           CLOCK_MINUTE_PIXEL_DELAY_MIN_MS,
+                                           CLOCK_MINUTE_PIXEL_DELAY_MAX_MS);
+                clock_noise.enabled = false;
+            }
+            flip_dot_set_noise_effect(display, &clock_noise);
+
             clock_render(buffer, (uint8_t)local.tm_hour, (uint8_t)local.tm_min);
             flip_dot_update_display(display, buffer);
             last_display_key = display_key;
-            ESP_LOGI(TAG, "Display updated: %02d:%02d", local.tm_hour, local.tm_min);
+            ESP_LOGI(TAG, "Display updated: %02d:%02d (%s)",
+                     local.tm_hour, local.tm_min,
+                     hour_changed ? "hour" : "minute");
         }
 
         vTaskDelay(SNTP_POLL_INTERVAL_MS / portTICK_PERIOD_MS);
