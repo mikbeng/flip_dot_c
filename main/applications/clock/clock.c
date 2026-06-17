@@ -37,6 +37,18 @@ static const char *TAG = "clock";
 #define SNTP_SYNC_TIMEOUT_MS  30000
 #define SNTP_POLL_INTERVAL_MS 100
 
+/* Quiet hours: no clock updates, show "Godnatt" instead (local time). */
+#define CLOCK_INACTIVE_START_HOUR  22
+#define CLOCK_INACTIVE_END_HOUR    6
+
+/* Set to true to always show the quiet-hours message (for display testing). */
+#define CLOCK_FORCE_QUIET_TEST     false
+
+#define QUIET_FONT_WIDTH   4
+#define QUIET_FONT_HEIGHT  7
+#define QUIET_CHAR_GAP     0
+#define QUIET_TEXT         "GODNATT"
+
 #define FONT_WIDTH  5
 #define FONT_HEIGHT 7
 #define CHAR_GAP    1
@@ -57,6 +69,19 @@ static const uint8_t GLYPH_DIGITS[10][FONT_WIDTH] = {
 };
 
 static const uint8_t GLYPH_COLON[COLON_WIDTH] = {0x00, 0x24};
+
+/* 4x7 uppercase glyphs — 7 chars × 4 px = 28 px (full display width). */
+static const uint8_t QUIET_GLYPH_G[4] = {0x3E, 0x41, 0x49, 0x3A};
+static const uint8_t QUIET_GLYPH_O[4] = {0x3E, 0x41, 0x41, 0x3E};
+static const uint8_t QUIET_GLYPH_D[4] = {0x7F, 0x41, 0x41, 0x3E};
+static const uint8_t QUIET_GLYPH_N[4] = {0x7F, 0x04, 0x18, 0x7F};
+static const uint8_t QUIET_GLYPH_A[4] = {0x7E, 0x09, 0x09, 0x7E};
+static const uint8_t QUIET_GLYPH_T[4] = {0x01, 0x01, 0x7F, 0x01};
+
+typedef enum {
+    CLOCK_VIEW_TIME,
+    CLOCK_VIEW_QUIET,
+} clock_view_t;
 
 static bool s_sntp_started;
 
@@ -117,16 +142,21 @@ static bool clock_get_local_time(struct tm *local)
     return true;
 }
 
+static bool clock_is_inactive_hour(int hour)
+{
+    return hour >= CLOCK_INACTIVE_START_HOUR || hour < CLOCK_INACTIVE_END_HOUR;
+}
+
 static void draw_glyph(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH],
                        int x, int y,
-                       const uint8_t *cols, int width)
+                       const uint8_t *cols, int width, int height)
 {
     for (int col = 0; col < width; col++) {
         int px = x + col;
         if (px < 0 || px >= DISPLAY_WIDTH) {
             continue;
         }
-        for (int row = 0; row < FONT_HEIGHT; row++) {
+        for (int row = 0; row < height; row++) {
             int py = y + row;
             if (py < 0 || py >= DISPLAY_HEIGHT) {
                 continue;
@@ -135,6 +165,43 @@ static void draw_glyph(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH],
                 buffer[py][px] = 1;
             }
         }
+    }
+}
+
+static const uint8_t *clock_get_quiet_glyph(char c)
+{
+    switch (c) {
+    case 'G': return QUIET_GLYPH_G;
+    case 'O': return QUIET_GLYPH_O;
+    case 'D': return QUIET_GLYPH_D;
+    case 'N': return QUIET_GLYPH_N;
+    case 'A': return QUIET_GLYPH_A;
+    case 'T': return QUIET_GLYPH_T;
+    default:  return NULL;
+    }
+}
+
+static int quiet_line_width(const char *text)
+{
+    const int len = (int)strlen(text);
+    if (len <= 0) {
+        return 0;
+    }
+    return len * QUIET_FONT_WIDTH + (len - 1) * QUIET_CHAR_GAP;
+}
+
+static void clock_render_quiet_line(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH],
+                                    const char *text, int origin_y)
+{
+    const int total_w = quiet_line_width(text);
+    int x = (DISPLAY_WIDTH - total_w) / 2;
+
+    for (const char *c = text; *c != '\0'; c++) {
+        const uint8_t *glyph = clock_get_quiet_glyph(*c);
+        if (glyph) {
+            draw_glyph(buffer, x, origin_y, glyph, QUIET_FONT_WIDTH, QUIET_FONT_HEIGHT);
+        }
+        x += QUIET_FONT_WIDTH + QUIET_CHAR_GAP;
     }
 }
 
@@ -161,10 +228,10 @@ static void clock_render(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH],
     int x = origin_x;
     for (int i = 0; i < 4; i++) {
         if (i == 2) {
-            draw_glyph(buffer, x, origin_y, GLYPH_COLON, COLON_WIDTH);
+            draw_glyph(buffer, x, origin_y, GLYPH_COLON, COLON_WIDTH, FONT_HEIGHT);
             x += COLON_WIDTH + CHAR_GAP;
         }
-        draw_glyph(buffer, x, origin_y, GLYPH_DIGITS[digits[i]], FONT_WIDTH);
+        draw_glyph(buffer, x, origin_y, GLYPH_DIGITS[digits[i]], FONT_WIDTH, FONT_HEIGHT);
         x += FONT_WIDTH;
         if (i < 3) {
             x += CHAR_GAP;
@@ -172,10 +239,28 @@ static void clock_render(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH],
     }
 }
 
+static void clock_render_quiet(uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH])
+{
+    memset(buffer, 0, DISPLAY_HEIGHT * DISPLAY_WIDTH);
+    const int origin_y = (DISPLAY_HEIGHT - QUIET_FONT_HEIGHT) / 2;
+    clock_render_quiet_line(buffer, QUIET_TEXT, origin_y);
+}
+
+static void clock_apply_quiet_update_effect(flip_dot_t *display,
+                                            flip_dot_noise_effect_t *noise)
+{
+    flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
+                               CLOCK_MINUTE_PIXEL_DELAY_MIN_MS,
+                               CLOCK_MINUTE_PIXEL_DELAY_MAX_MS);
+    noise->enabled = false;
+    flip_dot_set_noise_effect(display, noise);
+}
+
 void clock_app_run(flip_dot_t *display, clock_app_abort_cb_t should_abort)
 {
     uint8_t buffer[DISPLAY_HEIGHT][DISPLAY_WIDTH];
     int last_display_key = -1;
+    clock_view_t last_view = CLOCK_VIEW_TIME;
 
     const sweep_mode_t prev_sweep = display->sweep_mode;
     const uint16_t prev_delay_min = display->pixel_delay_min_ms;
@@ -212,30 +297,47 @@ void clock_app_run(flip_dot_t *display, clock_app_abort_cb_t should_abort)
             continue;
         }
 
-        const int display_key = local.tm_hour * 60 + local.tm_min;
-        if (display_key != last_display_key) {
-            const bool hour_changed = last_display_key < 0
-                || (last_display_key / 60) != local.tm_hour;
+        const bool inactive = CLOCK_FORCE_QUIET_TEST
+            || clock_is_inactive_hour(local.tm_hour);
 
-            if (hour_changed) {
-                flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
-                                           CLOCK_HOUR_PIXEL_DELAY_MIN_MS,
-                                           CLOCK_HOUR_PIXEL_DELAY_MAX_MS);
-                clock_noise.enabled = true;
-            } else {
-                flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
-                                           CLOCK_MINUTE_PIXEL_DELAY_MIN_MS,
-                                           CLOCK_MINUTE_PIXEL_DELAY_MAX_MS);
-                clock_noise.enabled = false;
+        if (inactive) {
+            if (last_view != CLOCK_VIEW_QUIET) {
+                clock_apply_quiet_update_effect(display, &clock_noise);
+                clock_render_quiet(buffer);
+                flip_dot_update_display(display, buffer);
+                last_view = CLOCK_VIEW_QUIET;
+                last_display_key = -1;
+                ESP_LOGI(TAG, "Quiet hours — showing %s", QUIET_TEXT);
             }
-            flip_dot_set_noise_effect(display, &clock_noise);
+        } else {
+            const int display_key = local.tm_hour * 60 + local.tm_min;
+            const bool entering_active = last_view != CLOCK_VIEW_TIME;
 
-            clock_render(buffer, (uint8_t)local.tm_hour, (uint8_t)local.tm_min);
-            flip_dot_update_display(display, buffer);
-            last_display_key = display_key;
-            ESP_LOGI(TAG, "Display updated: %02d:%02d (%s)",
-                     local.tm_hour, local.tm_min,
-                     hour_changed ? "hour" : "minute");
+            if (entering_active || display_key != last_display_key) {
+                const bool hour_changed = entering_active || last_display_key < 0
+                    || (last_display_key / 60) != local.tm_hour;
+
+                if (hour_changed) {
+                    flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
+                                               CLOCK_HOUR_PIXEL_DELAY_MIN_MS,
+                                               CLOCK_HOUR_PIXEL_DELAY_MAX_MS);
+                    clock_noise.enabled = true;
+                } else {
+                    flip_dot_set_update_effect(display, CLOCK_SWEEP_MODE,
+                                               CLOCK_MINUTE_PIXEL_DELAY_MIN_MS,
+                                               CLOCK_MINUTE_PIXEL_DELAY_MAX_MS);
+                    clock_noise.enabled = false;
+                }
+                flip_dot_set_noise_effect(display, &clock_noise);
+
+                clock_render(buffer, (uint8_t)local.tm_hour, (uint8_t)local.tm_min);
+                flip_dot_update_display(display, buffer);
+                last_view = CLOCK_VIEW_TIME;
+                last_display_key = display_key;
+                ESP_LOGI(TAG, "Display updated: %02d:%02d (%s)",
+                         local.tm_hour, local.tm_min,
+                         hour_changed ? "hour" : "minute");
+            }
         }
 
         vTaskDelay(SNTP_POLL_INTERVAL_MS / portTICK_PERIOD_MS);
