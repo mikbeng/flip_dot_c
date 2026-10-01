@@ -94,16 +94,6 @@ void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEI
 void flip_dot_set_rows_cols(flip_dot_t *display, uint8_t row_start, uint8_t row_end, uint8_t col_start, uint8_t col_end, bool pixel_value);
 void flip_dot_clear_display(flip_dot_t *display);
 
-// Demo functions — should_abort returns true to stop the animation early (may be NULL)
-typedef bool (*flip_dot_demo_abort_cb_t)(void);
-
-void flip_dot_demo_sine_wave(flip_dot_t *display, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort);
-void flip_dot_demo_bouncing_ball(flip_dot_t *display, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort);
-void flip_dot_demo_matrix_rain(flip_dot_t *display, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort);
-void flip_dot_demo_ripple_effect(flip_dot_t *display, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort);
-void flip_dot_demo_scrolling_text(flip_dot_t *display, const char* text, uint32_t delay_ms, flip_dot_demo_abort_cb_t should_abort);
-void flip_dot_demo_game_of_life(flip_dot_t *display, uint32_t delay_ms, uint32_t generations, flip_dot_demo_abort_cb_t should_abort);
-
 // Debug functions
 void flip_dot_debug_pixel_calc(uint8_t row, uint8_t col, bool value);
 
