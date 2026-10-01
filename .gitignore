@@ -6,3 +6,5 @@ CMakeCache.txt
 CMakeFiles/
 *.code-workspace
 /.cache
+__pycache__/
+*.pyc

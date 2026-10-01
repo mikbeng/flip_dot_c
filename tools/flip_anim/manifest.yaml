@@ -1,0 +1,46 @@
+width: 28
+height: 13
+
+clips:
+  - id: bouncing_ball
+    generator: bouncing_ball
+    delay_ms: 30
+    params:
+      frame_count: 300
+
+  - id: sine_wave
+    generator: sine_wave
+    delay_ms: 150
+    params:
+      frame_count: 200
+
+  - id: matrix_rain
+    generator: matrix_rain
+    delay_ms: 50
+    params:
+      frame_count: 500
+      seed: 0
+
+  - id: ripple
+    generator: ripple
+    delay_ms: 80
+    params:
+      frame_count: 100
+
+  - id: scrolling_text
+    generator: scrolling_text
+    delay_ms: 100
+    params:
+      text: "A"
+
+  - id: game_of_life
+    generator: game_of_life
+    delay_ms: 100
+    params:
+      generations: 100
+      seed: 0
+
+playlists:
+  demo:
+    - bouncing_ball
+    - sine_wave

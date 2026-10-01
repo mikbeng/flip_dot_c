@@ -5,6 +5,7 @@
 #include "pwr_ctrl.h"
 #include "esp_log.h"
 #include "flip_dot.h"
+#include "anim.h"
 #include "snake.h"
 #include "clock.h"
 #include "input.h"
@@ -178,8 +179,10 @@ static void run_demo_mode(flip_dot_t *display, app_mode_t *mode)
     demo_abort_ctx.mode = mode;
 
     while (*mode == APP_MODE_DEMO) {
-        ESP_LOGI(TAG, "Running bouncing ball demo...");
-        flip_dot_demo_bouncing_ball(display, 30, demo_should_abort);
+        if (anim_playlist_run(display, DEMO_PLAYLIST, DEMO_PLAYLIST_LEN, demo_should_abort)) {
+            break;
+        }
+
         if (*mode != APP_MODE_DEMO) {
             break;
         }
@@ -187,9 +190,6 @@ static void run_demo_mode(flip_dot_t *display, app_mode_t *mode)
         if (delay_with_abort(5000)) {
             break;
         }
-
-        ESP_LOGI(TAG, "Running sine wave demo...");
-        flip_dot_demo_sine_wave(display, 150, demo_should_abort);
     }
 }
 
