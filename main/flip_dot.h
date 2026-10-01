@@ -93,6 +93,7 @@ void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool valu
 void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH]);
 void flip_dot_set_rows_cols(flip_dot_t *display, uint8_t row_start, uint8_t row_end, uint8_t col_start, uint8_t col_end, bool pixel_value);
 void flip_dot_clear_display(flip_dot_t *display);
+void flip_dot_suspend_updates(bool suspend);
 
 // Demo functions — should_abort returns true to stop the animation early (may be NULL)
 typedef bool (*flip_dot_demo_abort_cb_t)(void);

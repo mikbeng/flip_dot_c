@@ -12,6 +12,7 @@
 #include "esp_wifi.h"
 #include "esp_mac.h"
 #include "switch_input.h"
+#include "ota_update.h"
 
 const static char *TAG = "MAIN";
 
@@ -59,6 +60,9 @@ static demo_abort_ctx_t demo_abort_ctx;
 
 static bool demo_should_abort(void)
 {
+    if (ota_update_is_active()) {
+        return true;
+    }
     return poll_mode_switch(demo_abort_ctx.display, demo_abort_ctx.mode);
 }
 
@@ -150,6 +154,11 @@ static void run_snake_mode(flip_dot_t *display, input_system_t *input_sys, app_m
 
         input_system_process(input_sys);
 
+        if (ota_update_is_active()) {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            continue;
+        }
+
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
         if (game.state == GAME_RUNNING && (current_time - last_update >= game.game_speed_ms)) {
             snake_game_update(&game);
@@ -195,6 +204,9 @@ static void run_demo_mode(flip_dot_t *display, app_mode_t *mode)
 
 static bool clock_should_abort(void)
 {
+    if (ota_update_is_active()) {
+        return true;
+    }
     return poll_mode_switch(demo_abort_ctx.display, demo_abort_ctx.mode);
 }
 
@@ -229,6 +241,8 @@ void app_main(void)
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     flip_dot_clear_display(&flip_dot);
 
+    ota_update_mark_running_valid();
+
     input_system_config_t input_config = input_get_default_config();
     input_config.enabled_types = INPUT_TYPE_ESPNOW;
     input_config.espnow_config = input_get_default_espnow_config();
@@ -251,6 +265,11 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting in %s mode (press switch to change)", mode_name(mode));
 
     while (1) {
+        if (ota_update_is_active()) {
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            continue;
+        }
+
         switch (mode) {
         case APP_MODE_SNAKE:
             run_snake_mode(&flip_dot, &input_sys, &mode);

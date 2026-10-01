@@ -18,4 +18,27 @@ config CLOCK_TIMEZONE
     help
 	Timezone used when rendering the clock (POSIX TZ format).
 	Example for Sweden: CET-1CEST,M3.5.0,M10.5.0/3
+
+config OTA_HTTP_PORT
+    int "OTA HTTP server port"
+    range 1 65535
+    default 8080
+    help
+	TCP port for the HTTP OTA upload server (POST /ota).
+	Reachable on the STA network only.
+
+config OTA_PASSWORD
+    string "OTA Bearer token"
+    default "flipdot-ota"
+    help
+	Shared secret sent as: Authorization: Bearer <token>
+	Change this before using OTA on anything other than a lab LAN.
+
+config OTA_HOSTNAME
+    string "STA / mDNS hostname"
+    default "flipdot"
+    help
+	Netif hostname and mDNS name. After STA gets an IP, the OTA
+	endpoint is http://<hostname>.local:<port>/ota on networks
+	with working mDNS.
 endmenu

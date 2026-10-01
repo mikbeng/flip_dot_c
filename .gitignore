@@ -6,3 +6,4 @@ CMakeCache.txt
 CMakeFiles/
 *.code-workspace
 /.cache
+managed_components/

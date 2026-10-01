@@ -16,6 +16,7 @@
 #include <string.h>
 #include "nvs_flash.h"
 #include "sdkconfig.h"
+#include "ota_update.h"
 
 static const char *TAG = "input_espnow";
 
@@ -91,6 +92,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         const ip_event_got_ip_t *event = (const ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "STA got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        static bool ota_server_started = false;
+        if (!ota_server_started) {
+            if (ota_update_start() == ESP_OK) {
+                ota_server_started = true;
+            }
+        }
     }
 }
 
@@ -110,8 +117,12 @@ esp_err_t input_espnow_init(input_system_t *input_sys) {
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
+    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
     esp_netif_create_default_wifi_ap();
+    if (sta_netif) {
+        ESP_ERROR_CHECK(esp_netif_set_hostname(sta_netif, CONFIG_OTA_HOSTNAME));
+        ESP_LOGI(TAG, "STA hostname: %s", CONFIG_OTA_HOSTNAME);
+    }
 
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                                &wifi_event_handler, NULL));

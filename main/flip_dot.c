@@ -35,6 +35,7 @@
 #define PIN_ENABLE_2E 4
 
 static const char *TAG = "flip_dot";
+static volatile bool s_updates_suspended;
 
 /******************************************************************************
  * Private Function Declarations
@@ -499,7 +500,17 @@ static void flip_dot_apply_settle_phase(flip_dot_t *display,
     memcpy(display->pixel_state, data, sizeof(display->pixel_state));
 }
 
+void flip_dot_suspend_updates(bool suspend)
+{
+    s_updates_suspended = suspend;
+    ESP_LOGI(TAG, "Display updates %s", suspend ? "suspended" : "enabled");
+}
+
 void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool value) {
+    if (s_updates_suspended) {
+        return;
+    }
+
     uint8_t row_grp = row / 7;
     uint8_t row_grp_pixel = row % 7;
     
@@ -531,6 +542,9 @@ void flip_dot_set_pixel(flip_dot_t *display, uint8_t row, uint8_t col, bool valu
 }
 
 void flip_dot_clear_display(flip_dot_t *display) {
+    if (s_updates_suspended) {
+        return;
+    }
     ESP_LOGI(TAG, "Clearing display");
     for (uint8_t r = 0; r < DISPLAY_HEIGHT; r++) {
         for (uint8_t c = 0; c < DISPLAY_WIDTH; c++) {
@@ -541,6 +555,9 @@ void flip_dot_clear_display(flip_dot_t *display) {
 }
 
 void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEIGHT][DISPLAY_WIDTH]) {
+    if (s_updates_suspended) {
+        return;
+    }
     uint8_t flip_list[DISPLAY_HEIGHT * DISPLAY_WIDTH][2];
     uint16_t flip_count = 0;
 
@@ -581,6 +598,9 @@ void flip_dot_update_display(flip_dot_t *display, const uint8_t data[DISPLAY_HEI
 }
 
 void flip_dot_set_rows_cols(flip_dot_t *display, uint8_t row_start, uint8_t row_end, uint8_t col_start, uint8_t col_end, bool pixel_value) {
+    if (s_updates_suspended) {
+        return;
+    }
     for (uint8_t r = row_start; r <= row_end; r++) {
         for (uint8_t c = col_start; c <= col_end; c++) {
             flip_dot_set_pixel(display, r, c, pixel_value);
