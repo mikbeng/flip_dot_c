@@ -1,0 +1,41 @@
+---
+description: Git branching and merge workflow for features and bugfixes
+alwaysApply: true
+---
+
+# Git Workflow
+
+## Branching
+
+- Create a dedicated branch for every feature or bugfix.
+- Always branch from an up-to-date `main`.
+- Naming:
+  - Features: `feat/<short-description>`
+  - Bugfixes: `fix/<short-description>`
+- Examples: `feat/espnow-debounce`, `fix/display-flicker`
+
+## Starting work
+
+1. `git checkout main`
+2. `git pull origin main`
+3. `git checkout -b feat/<name>` or `git checkout -b fix/<name>`
+
+## During work
+
+- Keep commits focused and use conventional commit messages (`feat`, `fix`, `chore`, `docs`, `refactor`, `test`).
+- Do not commit secrets or local-only files.
+- Only commit when explicitly asked.
+
+## Finishing work
+
+1. Ensure the feature or bugfix is complete and tested as needed.
+2. Update `main` if needed: `git checkout main` then `git pull origin main`.
+3. Merge the branch into `main` locally (fast-forward preferred when possible).
+4. Push `main` only when explicitly asked.
+5. Delete the local feature/fix branch after a successful merge.
+
+## Do not
+
+- Do not create pull requests or merge requests for this project.
+- Do not open branches from anything other than `main`.
+- Do not push feature/fix branches unless explicitly asked.
